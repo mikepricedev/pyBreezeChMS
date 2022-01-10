@@ -29,6 +29,7 @@ ENDPOINTS = make_enum(
     PROFILE_FIELDS='/api/profile',
     CONTRIBUTIONS='/api/giving',
     FUNDS='/api/funds',
+    FORMS='/api/forms',
     PLEDGES='/api/pledges',
     TAGS='/api/tags',
     ACCOUNT_SUMMARY='/api/account/summary')
@@ -596,6 +597,51 @@ class BreezeApi(object):
             params.append('include_totals=1')
         return self._request('%s/list?%s' %
                              (ENDPOINTS.FUNDS, '&'.join(params)))
+
+    def list_forms(self, is_archived=False):
+        """List all forms.
+
+        Args:
+          is_archived: If set to True, archived forms will be returned instead of active forms.
+
+        Returns:
+          JSON Reponse."""
+        
+        params = []
+        if is_archived:
+            params.append('is_archived=1')
+        return self._request('%s/list_forms?%s' %
+                             (ENDPOINTS.FORMS, '&'.join(params)))
+    
+    def list_form_entries(self, form_id, details = False):
+        """List all forms entries.
+
+        Args:
+          form_id: The entries will be returned that correspond to the numeric form id provided.
+          
+          details: If set to True, the entry responses will be returned as well. The entry response array has key values that correspond to the form fields.
+
+        Returns:
+          JSON Reponse."""
+        
+        params = ['form_id=%s' % form_id]
+        if details:
+            params.append('details=1')
+        return self._request('%s/list_form_entries?%s' %
+                             (ENDPOINTS.FORMS, '&'.join(params)))
+
+    def remove_form_entry(self, entry_id):
+        """Remove Form Entry.
+
+        Args:
+          entry_id: The id of the form entry you want to remove.
+
+        Returns:
+          JSON Reponse."""
+        
+        params = ['entry_id=%s' % entry_id]
+        return self._request('%s/remove_form_entry?%s' %
+                             (ENDPOINTS.FORMS, '&'.join(params)))
 
     def list_campaigns(self):
         """List of campaigns.
