@@ -18,6 +18,7 @@ Usage:
 __author__ = 'alexortizrosado@gmail.com (Alex Ortiz-Rosado)'
 
 import logging
+from pickle import NONE
 import requests
 
 from .utils import make_enum
@@ -28,6 +29,7 @@ ENDPOINTS = make_enum(
     EVENTS='/api/events',
     PROFILE_FIELDS='/api/profile',
     CONTRIBUTIONS='/api/giving',
+    ATTENDANCE='api/events/attendance',
     FUNDS='/api/funds',
     FORMS='/api/forms',
     PLEDGES='/api/pledges',
@@ -89,9 +91,9 @@ class BreezeApi(object):
         if headers is None:
             headers = {}
         headers.update({
-          'Content-Type': 'application/json',
-          'Api-Key': self.api_key}
-          )
+            'Content-Type': 'application/json',
+            'Api-Key': self.api_key}
+        )
 
         if params is None:
             params = {}
@@ -279,6 +281,42 @@ class BreezeApi(object):
             params.append('end=%s' % end_date)
         return self._request('%s/?%s' % (ENDPOINTS.EVENTS, '&'.join(params)))
 
+    def list_events(self,
+                    start_date=None,
+                    end_date=None,
+                    category_id=None,
+                    eligible=False,
+                    details=False,
+                    limit=500
+                    ):
+        """Retrieve a list of events based on search criteria.
+
+        Args:
+          start_date: Events on or after (YYYY-MM-DD)
+          end_date: Events on or before (YYYY-MM-DD)
+          category_id: If supplied, only events on the specified calendar will be returned. Note that external calendars are not available via this call.
+          eligible: If set to 1, details about who is eligible to be checked in ("everyone", "tags", "forms", or "none") are returned (including tags associated with the event).
+          details: If set to True, additional event details will be returned (e.g. description, check in settings, etc)
+          limit: Number of events to return. Default is 500. Max is 1000.
+
+        Returns:
+          JSON response."""
+        params = []
+        if start_date:
+            params.append('start=%s' % start_date)
+        if end_date:
+            params.append('end=%s' % end_date)
+        if category_id:
+            params.append('category_id=%s' % category_id)
+        if eligible:
+            params.append('eligible=%s' % eligible)
+        if details:
+            params.append('details=%s' % details)
+        if limit or limit == 0:
+            params.append('limit=%s' % limit)
+
+        return self._request('%s/?%s' % (ENDPOINTS.EVENTS, '&'.join(params)))
+
     def event_check_in(self, person_id, event_instance_id):
         """Checks in a person into an event.
 
@@ -305,6 +343,25 @@ class BreezeApi(object):
             '%s/attendance/delete?person_id=%s&instance_id=%s' % (
                 ENDPOINTS.EVENTS, str(person_id), str(event_instance_id)
             ))
+
+    def list_attendance(self, instance_id, details=False, type="person"):
+        """Retrieve a list of attendees for a given event instance_id.
+
+          Args:
+            instance_id: The ID of the instance you'd like to return the attendance for
+            details: If set to true, details of the person will be included in the response
+            type: Determines if result should contain people or anonymous head count by setting to either 'person' or 'anonymous'
+
+          Returns:
+            JSON response."""
+
+        params = ['instance_id=%s' % instance_id, ]
+        if details:
+            params.append('details=%s' % details)
+        if type:
+            params.append('type=%s' % type)
+        return self._request('%s/list/?%s' %
+                             (ENDPOINTS.ATTENDANCE, '&'.join(params)))
 
     def add_contribution(self,
                          date=None,
@@ -530,7 +587,8 @@ class BreezeApi(object):
                            fund_ids=None,
                            envelope_number=None,
                            batches=None,
-                           forms=None):
+                           forms=None,
+                           pledge_ids=None):
         """Retrieve a list of contributions.
 
         Args:
@@ -548,6 +606,7 @@ class BreezeApi(object):
           envelope_number: Envelope number.
           batches: List of Batch numbers.
           forms: List of form IDs.
+          pledge_ids: Pledge Campaign IDs. IDs accessible from list pledges query. Multiple ids separated by a dash (-).
 
         Returns:
           List of matching contributions.
@@ -580,6 +639,8 @@ class BreezeApi(object):
             params.append('batches=%s' % '-'.join(batches))
         if forms:
             params.append('forms=%s' % '-'.join(forms))
+        if pledge_ids:
+            params.append('pledge_ids=%s' % '-'.join(pledge_ids))
         return self._request('%s/list?%s' % (ENDPOINTS.CONTRIBUTIONS,
                                              '&'.join(params)))
 
@@ -606,24 +667,24 @@ class BreezeApi(object):
 
         Returns:
           JSON Reponse."""
-        
+
         params = []
         if is_archived:
             params.append('is_archived=1')
         return self._request('%s/list_forms?%s' %
                              (ENDPOINTS.FORMS, '&'.join(params)))
-    
-    def list_form_entries(self, form_id, details = False):
+
+    def list_form_entries(self, form_id, details=False):
         """List all forms entries.
 
         Args:
           form_id: The entries will be returned that correspond to the numeric form id provided.
-          
+
           details: If set to True, the entry responses will be returned as well. The entry response array has key values that correspond to the form fields.
 
         Returns:
           JSON Reponse."""
-        
+
         params = ['form_id=%s' % form_id]
         if details:
             params.append('details=1')
@@ -638,7 +699,7 @@ class BreezeApi(object):
 
         Returns:
           JSON Reponse."""
-        
+
         params = ['entry_id=%s' % entry_id]
         return self._request('%s/remove_form_entry?%s' %
                              (ENDPOINTS.FORMS, '&'.join(params)))
@@ -686,13 +747,12 @@ class BreezeApi(object):
             { ... }
             ]"""
 
-
         params = []
         if folder:
             params.append('folder_id=%s' % folder)
         return self._request('%s/%s/?%s' % (ENDPOINTS.TAGS, 'list_tags', '&'.join(params)))
 
-    def get_tag_folders(api):
+    def get_tag_folders(self):
         """List of tag folders
 
         Args: (none)
@@ -725,56 +785,70 @@ class BreezeApi(object):
                  "created_on":"2018-12-15 18:11:31"
              }
              ]"""
-        return api._request("%s/%s" % (ENDPOINTS.TAGS, "list_folders"))
+        return self._request("%s/%s" % (ENDPOINTS.TAGS, "list_folders"))
 
-    def assign_tag(self, 
+    def add_tag(self, name, folder_id=None):
+        """Add a new tag
+
+        Args:
+          name: The name of the tag.
+          folder_id: The specific folder to place the tag can be specified. If omitted, the tag will be placed in the top level folder.
+
+        Returns: JSON response.
+        """
+        params = ['name=%s' % name]
+        if folder_id:
+            params.append('folder_id=%s' % folder_id)
+
+        return self._request('%s/add_tag?%s' % (ENDPOINTS.TAGS,
+                                                '&'.join(params)))
+
+    def assign_tag(self,
                    person_id,
                    tag_id):
         """
         Update a person's tag/s.
-        
+
         params:
-        
+
         person_id: an existing person's user id
-        
+
         tag_id: the id number of the tag you want to assign to the user
-        
+
         output: true or false upon success or failure of tag update
         """
         params = []
-                   
-        params.append('person_id=%s' % person_id)           
+
+        params.append('person_id=%s' % person_id)
 
         params.append('tag_id=%s' % tag_id)
 
         response = self._request('%s/assign?%s' %
-                             (ENDPOINTS.TAGS, '&'.join(params)))
-        
+                                 (ENDPOINTS.TAGS, '&'.join(params)))
+
         return response
-    
-    def unassign_tag(self, 
-                   person_id,
-                   tag_id):
+
+    def unassign_tag(self,
+                     person_id,
+                     tag_id):
         """
         Delete a person's tag/s.
-        
+
         params:
-        
+
         person_id: an existing person's user id
-        
+
         tag_id: the id number of the tag you want to assign to the user
-        
+
         output: true or false upon success or failure of tag deletion
         """
         params = []
-                   
-        params.append('person_id=%s' % person_id)           
+
+        params.append('person_id=%s' % person_id)
 
         params.append('tag_id=%s' % tag_id)
 
         response = self._request('%s/unassign?%s' %
-                             (ENDPOINTS.TAGS, '&'.join(params)))
-        
-        return response            
+                                 (ENDPOINTS.TAGS, '&'.join(params)))
 
-
+        return response
