@@ -42,12 +42,43 @@ class BreezeError(Exception):
     pass
 
 
+class RequestHandler(object):
+    """Handlers requests and response to the Breeze api server."""
+
+    def __init__(self, connection=requests.Session()):
+        self.connection = connection
+
+    def get(self, url, **kwargs):
+        """Get requests to Breeze api server."""
+        response = self.connection.get(url, **kwargs)
+        return self.response_handler(response)
+
+    def response_handler(self, response):
+        """Convert response to JSON and handle errors."""
+        try:
+            response = response.json()
+        except requests.ConnectionError as error:
+            raise BreezeError(error)
+        else:
+            if not self._request_succeeded(response):
+                raise BreezeError(response)
+            logging.debug('JSON Response: %s', response)
+            return response
+
+    def _request_succeeded(self, response):
+        """Predicate to ensure that the HTTP request succeeded."""
+        if isinstance(response, bool):
+            return response
+        else:
+            return not (('errors' in response) or ('errorCode' in response))
+
+
 class BreezeApi(object):
     """A wrapper for the Breeze REST API."""
 
     def __init__(self, breeze_url, api_key,
                  dry_run=False,
-                 connection=requests.Session()):
+                 connection=RequestHandler()):
         """Instantiates the BreezeApi with your Breeze account information.
 
         Args:
@@ -58,12 +89,16 @@ class BreezeApi(object):
                    http://breezechms.com/docs#extensions_api
           dry_run: Enable no-op mode, which disables requests from being made.
                    When combined with debug, this allows debugging requests
-                   without affecting data in your Breeze account."""
+                   without affecting data in your Breeze account.
+          connection: Requests compatible session or ConnectionCompatibility sub class."""
 
         self.breeze_url = breeze_url
         self.api_key = api_key
         self.dry_run = dry_run
-        self.connection = connection
+        if isinstance(connection, RequestHandler) or issubclass(connection, RequestHandler):
+            self.request_handler = connection
+        else:
+            self.request_handler = RequestHandler(connection=connection)
 
         # TODO(alex): use urlparse to check url format.
         if not (self.breeze_url and self.breeze_url.startswith('https://') and
@@ -104,23 +139,7 @@ class BreezeApi(object):
         if self.dry_run:
             return
 
-        response = self.connection.get(url, verify=True, **keywords)
-        try:
-            response = response.json()
-        except requests.ConnectionError as error:
-            raise BreezeError(error)
-        else:
-            if not self._request_succeeded(response):
-                raise BreezeError(response)
-            logging.debug('JSON Response: %s', response)
-            return response
-
-    def _request_succeeded(self, response):
-        """Predicate to ensure that the HTTP request succeeded."""
-        if isinstance(response, bool):
-            return response
-        else:
-            return not (('errors' in response) or ('errorCode' in response))
+        return self.request_handler.get(url, verify=True, **keywords)
 
     def get_account_summary(self):
         """Retrieve the details for a specific account using the API key 
