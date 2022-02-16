@@ -208,7 +208,7 @@ class BreezeApi(object):
 
         params = []
         if details:
-            params.append('details=%s' % details)
+            params.append('details=1')
         # if filter_json:
         #     params.append('filter_json=%s' % json)
         if limit:
@@ -260,6 +260,13 @@ class BreezeApi(object):
           JSON response."""
         return self._request(ENDPOINTS.PROFILE_FIELDS)
 
+    def list_profile_fields(self):
+        """List profile fields from your database.
+
+        Returns:
+          JSON response."""
+        return self.get_profile_fields()
+
     def get_person_details(self, person_id):
         """Retrieve the details for a specific person by their ID.
 
@@ -279,7 +286,9 @@ class BreezeApi(object):
 
         Returns:
           JSON response."""
-        params = ['details=%s' % details]
+        params = []
+        if details:
+            params.append("details=1")
         return self._request('%s/%s?%s' % (ENDPOINTS.PEOPLE, str(person_id), '&'.join(params)))
 
     def add_person(self, first_name, last_name, fields_json=None):
@@ -387,9 +396,9 @@ class BreezeApi(object):
         if category_id:
             params.append('category_id=%s' % category_id)
         if eligible:
-            params.append('eligible=%s' % eligible)
+            params.append('eligible=1')
         if details:
-            params.append('details=%s' % details)
+            params.append('details=1')
         if limit or limit == 0:
             params.append('limit=%s' % limit)
 
@@ -445,10 +454,24 @@ class BreezeApi(object):
 
         params = ['instance_id=%s' % instance_id, ]
         if details:
-            params.append('details=%s' % details)
+            params.append('details=1')
         if type:
             params.append('type=%s' % type)
         return self._request('%s/list/?%s' %
+                             (ENDPOINTS.ATTENDANCE, '&'.join(params)))
+
+    def list_eligible_people(self, instance_id):
+        """Retrieve a list of eligible people for a give event instance_id.
+
+          Args:
+            instance_id: The ID of the instance you'd like to return the attendance for
+
+          Returns:
+            JSON response."""
+
+        params = ['instance_id=%s' % instance_id, ]
+
+        return self._request('%s/eligible?%s' %
                              (ENDPOINTS.ATTENDANCE, '&'.join(params)))
 
     def list_volunteers(self, instance_id):
@@ -476,7 +499,7 @@ class BreezeApi(object):
 
         params = ['instance_id=%s' % instance_id, ]
         if show_quantity:
-            params.append('show_quantity=%s' % show_quantity)
+            params.append('show_quantity=1')
         return self._request('%s/list_roles?%s' %
                              (ENDPOINTS.VOLUNTEERS, '&'.join(params)))
 
@@ -817,7 +840,7 @@ class BreezeApi(object):
 
         params = ['form_id=%s' % form_id]
         if details:
-            params.append('details=%s' % details)
+            params.append('details=1')
         return self._request('%s/list_form_entries?%s' %
                              (ENDPOINTS.FORMS, '&'.join(params)))
 
