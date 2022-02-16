@@ -30,6 +30,7 @@ ENDPOINTS = make_enum(
     PROFILE_FIELDS='/api/profile',
     CONTRIBUTIONS='/api/giving',
     ATTENDANCE='api/events/attendance',
+    VOLUNTEERS='api/volunteers',
     FUNDS='/api/funds',
     FORMS='/api/forms',
     PLEDGES='/api/pledges',
@@ -70,6 +71,11 @@ class RequestHandler(object):
         if isinstance(response, bool):
             return response
         else:
+            try:
+                iter(response)
+            except TypeError:
+                return True
+
             return not (('errors' in response) or ('errorCode' in response))
 
 
@@ -170,6 +176,47 @@ class BreezeApi(object):
           """
         return self._request(ENDPOINTS.ACCOUNT_SUMMARY)
 
+    def list_people(self,
+                    details=False,
+                    # filter_json=None,
+                    limit=None,
+                    offset=None):
+        """List people from your database.
+        Args:
+            details: Option to return all information (slower) or just names.
+            filter_json: Option to filter through results based on criteria (tags, status, etc). Refer to profile field response to know values to search for or if you're hard-coding the field ids, watch the URL bar when filtering for people within Breeze's people filter page and use the variables you see listed.
+            limit: Number of people to return. If None, will return all people.
+            offset: Number of people to skip before beginning to return results.
+                    Can be used in conjunction with limit for pagination.
+        returns:
+          JSON response. For example:
+          {
+            "id":"157857",
+            "first_name":"Thomas",
+            "last_name":"Anderson",
+            "path":"img\/profiles\/generic\/blue.jpg"
+          },
+          {
+            "id":"157859",
+            "first_name":"Kate",
+            "last_name":"Austen",
+            "path":"img\/profiles\/upload\/2498d7f78s.jpg"
+          },
+          {
+            ...
+          }"""
+
+        params = []
+        if details:
+            params.append('details=%s' % details)
+        # if filter_json:
+        #     params.append('filter_json=%s' % json)
+        if limit:
+            params.append('limit=%s' % limit)
+        if offset:
+            params.append('offset=%s' % offset)
+        return self._request('%s/?%s' % (ENDPOINTS.PEOPLE, '&'.join(params)))
+
     def get_people(self, limit=None, offset=None, details=False):
         """List people from your database.
 
@@ -222,6 +269,18 @@ class BreezeApi(object):
         Returns:
           JSON response."""
         return self._request('%s/%s' % (ENDPOINTS.PEOPLE, str(person_id)))
+
+    def show_person(self, person_id, details=True):
+        """Retrieve the details for a specific person by their ID.
+
+        Args:
+          person_id: Unique id for a person in Breeze database.
+          details: Option to return all information (slower) or just names. True = get all information pertaining to person; False = only get id and name
+
+        Returns:
+          JSON response."""
+        params = ['details=%s' % details]
+        return self._request('%s/%s?%s' % (ENDPOINTS.PEOPLE, str(person_id), '&'.join(params)))
 
     def add_person(self, first_name, last_name, fields_json=None):
         """Adds a new person into the database.
@@ -336,6 +395,16 @@ class BreezeApi(object):
 
         return self._request('%s/?%s' % (ENDPOINTS.EVENTS, '&'.join(params)))
 
+    def list_calendars(self):
+        """Retrieve a list of Calendars.
+        """
+        return self._request('%s/calendars/list' % ENDPOINTS.EVENTS)
+
+    def list_locations(self):
+        """Retrieve a list of Locations.
+        """
+        return self._request('%s/locations' % ENDPOINTS.EVENTS)
+
     def event_check_in(self, person_id, event_instance_id):
         """Checks in a person into an event.
 
@@ -381,6 +450,35 @@ class BreezeApi(object):
             params.append('type=%s' % type)
         return self._request('%s/list/?%s' %
                              (ENDPOINTS.ATTENDANCE, '&'.join(params)))
+
+    def list_volunteers(self, instance_id):
+        """List volunteers from a specific event.
+
+          Args:
+            instance_id: The id of the event instance you want to list the volunteers for.
+
+          Returns:
+            JSON response."""
+
+        params = ['instance_id=%s' % instance_id, ]
+        return self._request('%s/list?%s' %
+                             (ENDPOINTS.VOLUNTEERS, '&'.join(params)))
+
+    def list_volunteer_roles(self, instance_id, show_quantity=True):
+        """List volunteers from a specific event.
+
+          Args:
+            instance_id: The id of the event instance you want to retrieve the volunteer roles for.
+            show_quantity: Option to return quantity requested for each role.
+
+          Returns:
+            JSON response."""
+
+        params = ['instance_id=%s' % instance_id, ]
+        if show_quantity:
+            params.append('show_quantity=%s' % show_quantity)
+        return self._request('%s/list_roles?%s' %
+                             (ENDPOINTS.VOLUNTEERS, '&'.join(params)))
 
     def add_contribution(self,
                          date=None,
@@ -693,6 +791,19 @@ class BreezeApi(object):
         return self._request('%s/list_forms?%s' %
                              (ENDPOINTS.FORMS, '&'.join(params)))
 
+    def list_form_fields(self, form_id):
+        """List the fields for a given form.
+
+        Args:
+          form_id: The fields will be returned that correspond to the form id provided.
+
+        Returns:
+          JSON Reponse."""
+
+        params = ['form_id=%s' % form_id]
+        return self._request('%s/list_form_fields?%s' %
+                             (ENDPOINTS.FORMS, '&'.join(params)))
+
     def list_form_entries(self, form_id, details=False):
         """List all forms entries.
 
@@ -706,7 +817,7 @@ class BreezeApi(object):
 
         params = ['form_id=%s' % form_id]
         if details:
-            params.append('details=1')
+            params.append('details=%s' % details)
         return self._request('%s/list_form_entries?%s' %
                              (ENDPOINTS.FORMS, '&'.join(params)))
 
@@ -742,6 +853,35 @@ class BreezeApi(object):
             ENDPOINTS.PLEDGES, campaign_id
         ))
 
+    def list_tags(self, folder_id=None):
+        """List of tags
+
+        Args:
+          folder_id: If provided, only tags within that folder will be returned.
+
+        Returns:
+          JSON response. For example:
+            [
+            {
+                "id":"523928",
+                "name":"4th & 5th",
+                "created_on":"2018-09-10 09:19:40",
+                "folder_id":"1539"
+            },
+            {
+                "id":"51994",
+                "name":"6th Grade",
+                "created_on":"2018-02-06 06:40:40",
+                "folder_id":"1539"
+            },
+            { ... }
+            ]"""
+
+        params = []
+        if folder_id:
+            params.append('folder_id=%s' % folder_id)
+        return self._request('%s/list_tags/?%s' % (ENDPOINTS.TAGS, '&'.join(params)))
+
     def get_tags(self, folder=None):
         """List of tags
 
@@ -770,6 +910,41 @@ class BreezeApi(object):
         if folder:
             params.append('folder_id=%s' % folder)
         return self._request('%s/%s/?%s' % (ENDPOINTS.TAGS, 'list_tags', '&'.join(params)))
+
+    def list_tag_folders(self):
+        """List of tag folders
+
+        Args: (none)
+
+        Returns:
+          JSON response, for example:
+             [
+             {
+                 "id":"1234567",
+                 "parent_id":"0",
+                 "name":"All Tags",
+                 "created_on":"2018-06-05 18:12:34"
+             },
+             {
+                 "id":"8234253",
+                 "parent_id":"120425",
+                 "name":"Kids",
+                 "created_on":"2018-06-05 18:12:10"
+             },
+             {
+                 "id":"1537253",
+                 "parent_id":"5923042",
+                 "name":"Small Groups",
+                 "created_on":"2018-09-10 09:19:40"
+             },
+             {
+                 "id":"20033",
+                 "parent_id":"20031",
+                 "name":"Student Ministries",
+                 "created_on":"2018-12-15 18:11:31"
+             }
+             ]"""
+        return self._request("%s/list_folders" % ENDPOINTS.TAGS)
 
     def get_tag_folders(self):
         """List of tag folders
