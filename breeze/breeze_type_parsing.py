@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 from datetime import datetime
 
 
@@ -11,6 +11,13 @@ class type_parsing:
         "MM/DD/YYYY": "%m/%d/%Y"
     }
 
+    NULL_CASES = {
+        "YYYY-MM-DD": "00-00-00",
+        "YYYY-MM-DD hh:mm:ss": "00-00-00 00:00:00",
+        "DD-MM-YYYY": "00-00-00",
+        "MM/DD/YYYY": "00/00/00"
+    }
+
     # Dates
 
     @staticmethod
@@ -20,9 +27,14 @@ class type_parsing:
                 format_str_or_key, format_str_or_key))
 
     @staticmethod
-    def str_to_date(date: str, format_str_or_key: str) -> datetime:
+    def str_to_date(date: str, format_str_or_key: str) -> Union[datetime, None]:
+
         format_str = type_parsing.DATE_TIME_FORMAT_STRINGS.get(
             format_str_or_key) if format_str_or_key in type_parsing.DATE_TIME_FORMAT_STRINGS else format_str_or_key
+
+        # check for null dates
+        if type_parsing.NULL_CASES.get(format_str) == date:
+            return None
 
         return datetime.strptime(date,
                                  format_str)
@@ -82,19 +94,13 @@ class ReturnTypeParsers(object):
 
         if "check_in" in attendee:
             check_in = attendee.get("check_in")
-            if check_in == "0000-00-00 00:00:00":
-                attendee.pop("check_in")
-            else:
-                attendee["check_in"] = type_parsing.str_to_date(
-                    check_in, "YYYY-MM-DD hh:mm:ss")
+            attendee["check_in"] = type_parsing.str_to_date(
+                check_in, "YYYY-MM-DD hh:mm:ss")
 
         if "check_out" in attendee:
             check_out = attendee.get("check_out")
-            if check_out == "0000-00-00 00:00:00":
-                attendee.pop("check_out")
-            else:
-                attendee["check_out"] = type_parsing.str_to_date(
-                    check_out, "YYYY-MM-DD hh:mm:ss")
+            attendee["check_out"] = type_parsing.str_to_date(
+                check_out, "YYYY-MM-DD hh:mm:ss")
 
         return attendee
 
@@ -107,11 +113,8 @@ class ReturnTypeParsers(object):
 
         if "rsvped_on" in volunteer:
             rsvped_on = volunteer.get("rsvped_on")
-            if rsvped_on == "0000-00-00 00:00:00":
-                volunteer.pop("rsvped_on")
-            else:
-                volunteer["rsvped_on"] = type_parsing.str_to_date(
-                    rsvped_on, "YYYY-MM-DD hh:mm:ss")
+            volunteer["rsvped_on"] = type_parsing.str_to_date(
+                rsvped_on, "YYYY-MM-DD hh:mm:ss")
 
         return volunteer
 
