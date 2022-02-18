@@ -11,15 +11,7 @@ class type_parsing:
         "MM/DD/YYYY": "%m/%d/%Y"
     }
 
-    NULL_CASES = {
-        "YYYY-MM-DD": "00-00-00",
-        "YYYY-MM-DD hh:mm:ss": "00-00-00 00:00:00",
-        "DD-MM-YYYY": "00-00-00",
-        "MM/DD/YYYY": "00/00/00"
-    }
-
     # Dates
-
     @staticmethod
     def date_to_str(date: datetime, format_str_or_key: str) -> str:
         return date.strftime(
@@ -32,12 +24,12 @@ class type_parsing:
         format_str = type_parsing.DATE_TIME_FORMAT_STRINGS.get(
             format_str_or_key) if format_str_or_key in type_parsing.DATE_TIME_FORMAT_STRINGS else format_str_or_key
 
-        # check for null dates
-        if type_parsing.NULL_CASES.get(format_str) == date:
+        try:
+            return datetime.strptime(date, format_str)
+        except ValueError:
             return None
-
-        return datetime.strptime(date,
-                                 format_str)
+        except Exception as e:
+            raise e
 
 
 class ReturnTypeParsers(object):
