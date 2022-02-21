@@ -18,13 +18,13 @@ Usage:
 __author__ = 'alexortizrosado@gmail.com (Alex Ortiz-Rosado)'
 
 import logging
-from typing import Union
+from typing import List, Union
 import asyncio
 import httpx
 from datetime import datetime
-from enum import Enum, auto
 
 from .breeze_type_parsing import type_parsing, ReturnTypeParsers
+from .accountLogActions import AccountLogActions
 
 from .utils import make_enum
 
@@ -43,102 +43,15 @@ ENDPOINTS = make_enum(
     BREEZE_ACCOUNT='/api/account')
 
 
-class AccountLogActions(Enum):
-    # Communications,
-    email_sent = auto(),
-    text_sent = auto(),
-    # Contributions,
-    contribution_added = auto(),
-    contribution_updated = auto(),
-    contribution_deleted = auto(),
-    bulk_contributions_deleted = auto(),
-    envelope_created = auto(),
-    envelope_updated = auto(),
-    envelope_deleted = auto(),
-    payment_method_updated = auto(),
-    payment_method_deleted = auto(),
-    payment_method_created = auto(),
-    bank_account_added = auto(),
-    bank_account_updated = auto(),
-    transfer_day_changed = auto(),
-    bank_account_deleted = auto(),
-    payment_association_deleted = auto(),
-    payment_association_created = auto(),
-    bulk_import_contributions = auto(),
-    bulk_import_pledges = auto(),
-    bulk_pledges_deleted = auto(),
-    batch_updated = auto(),
-    batch_deleted = auto(),
-    bulk_envelopes_deleted = auto(),
-    # Events,
-    event_created = auto(),
-    event_updated = auto(),
-    event_deleted = auto(),
-    event_instance_deleted = auto(),
-    event_future_deleted = auto(),
-    events_calendar_created = auto(),
-    events_calendar_updated = auto(),
-    events_calendar_deleted = auto(),
-    bulk_import_attendance = auto(),
-    attendance_deleted = auto(),
-    bulk_attendance_deleted = auto(),
-    # Volunteers,
-    volunteer_role_created = auto(),
-    volunteer_role_deleted = auto(),
-    # People,
-    person_created = auto(),
-    person_updated = auto(),
-    person_deleted = auto(),
-    person_archived = auto(),
-    person_merged = auto(),
-    people_updated = auto(),
-    bulk_update_people = auto(),
-    bulk_people_deleted = auto(),
-    bulk_people_archived = auto(),
-    bulk_import_people = auto(),
-    bulk_notes_deleted = auto(),
-    # Tags,
-    tag_created = auto(),
-    tag_updated = auto(),
-    tag_deleted = auto(),
-    bulk_tags_deleted = auto(),
-    tag_folder_created = auto(),
-    tag_folder_updated = auto(),
-    tag_folder_deleted = auto(),
-    tag_assign = auto(),
-    tag_unassign = auto(),
-    # Forms,
-    form_created = auto(),
-    form_updated = auto(),
-    form_deleted = auto(),
-    form_entry_updated = auto(),
-    form_entry_deleted = auto(),
-    # Follow Ups,
-    followup_option_created = auto(),
-    followup_option_updated = auto(),
-    followup_option_deleted = auto(),
-    # Users,
-    user_created = auto(),
-    user_updated = auto(),
-    user_deleted = auto(),
-    role_created = auto(),
-    role_updated = auto(),
-    role_deleted = auto(),
-    # Extensions,
-    extension_installed = auto(),
-    extension_uninstalled = auto(),
-    extension_upgraded = auto(),
-    extension_downgraded = auto(),
-    # Account,
-    sub_payment_method_updated = auto()
-
-
 DATE_TIME_FORMAT_STRINGS = type_parsing.DATE_TIME_FORMAT_STRINGS
 
 
 class BreezeError(Exception):
     """Exception for BreezeApi."""
     pass
+
+
+Id = Union[int, str]
 
 
 class BreezeApi(object):
@@ -230,81 +143,7 @@ class BreezeApi(object):
 
             return not (('errors' in response) or ('errorCode' in response))
 
-    async def get_account_summary(self):
-        """Retrieve the details for a specific account using the API key
-          and URL. It can also work to see if the key and URL are valid.
-
-        Returns:
-          JSON response. For example:
-          {
-            "id":"1234",
-            "name":"Grace Church",
-            "subdomain":"gracechurchdemo",
-            "status":"1",
-            "created_on":"2018-09-10 09:19:35",
-            "details":{
-                "timezone":"America\/New_York",
-                "country":{
-                    "id":"2",
-                    "name":"United States of America",
-                    "abbreviation":"USA",
-                    "abbreviation_2":"US",
-                    "currency":"USD",
-                    "currency_symbol":"$",
-                    "date_format":"MDY",
-                    "sms_prefix":"1"
-                }
-            }
-          }
-          """
-        return self.return_type_parsers.breeze_account(
-            await self._request(f"{ENDPOINTS.BREEZE_ACCOUNT}/summary")
-        )
-
-    async def get_account_log(self,
-                              action: AccountLogActions, start_date: datetime = None,
-                              end_date: datetime = None,
-                              user_id: Union[str, int] = None,
-                              details: bool = False,
-                              limit: int = 500):
-        """Retrieve a list of events based on search criteria.
-
-        Args:
-             action: A required parameter indicating which type of logged action should be returned.
-
-             start_date: The start date range for actions that should be returned. If not provided, logged items will be fetched from as long ago as the log is storing.
-
-             end_date: The end date range for actions that should be returned. If not provided, logged items will be fetched up until the current moment.
-
-             user_id: The user_id of the user who made the logged action. If not provided, all users' actions will be returned.
-
-             details: If details about the logged action should be returned. Note that this column is not guaranteed to be standardized and should not be relied upon for anything more than a description.
-
-             limit: The number of logged items to return. Max is 3,000.
-
-        returns: JSON response."""
-
-        params = [f"action={action.name}"]
-
-        if start_date:
-            params.append(
-                f"start={type_parsing.date_to_str(start_date, 'YYYY-MM-DD')}")
-        if end_date:
-            params.append(
-                f"end={type_parsing.date_to_str(end_date, 'YYYY-MM-DD')}")
-        if user_id:
-            params.append(f"user_id={user_id}")
-        if limit:
-            params.append(f"limit={min(limit, 3000)}")
-        if details:
-            params.append("details=1")
-
-        return list(map(
-            lambda account_log: self.return_type_parsers.breeze_account_log(
-                account_log=account_log),
-            await self._request(f"{ENDPOINTS.BREEZE_ACCOUNT}/list_log?{'&'.join(params)}", timeout=180)
-        ))
-
+    # read
     async def list_people(self,
                           details: bool = False,
                           # filter_json=None,
@@ -351,17 +190,17 @@ class BreezeApi(object):
                 self.list_profile_fields()
             )
 
-            return list(map(
-                lambda person: self.return_type_parsers.person(
-                    person=person, profile_fields=profile_fields),
-                people))
+            if not people:
+                return []
+
+            return self.return_type_parsers.person(person=people,
+                                                   profile_fields=profile_fields)
 
         else:
             params.append('details=0')
-            return list(map(
-                lambda person: self.return_type_parsers.person(person=person),
-                await self._request(
-                    f"{ENDPOINTS.PEOPLE}/?{'&'.join(params)}")))
+            people = (await self._request(
+                f"{ENDPOINTS.PEOPLE}/?{'&'.join(params)}") or [])
+            return self.return_type_parsers.person(person=people)
 
     async def list_profile_fields(self):
         """List profile fields from your database.
@@ -371,9 +210,9 @@ class BreezeApi(object):
         return list(map(
             lambda profile_field: self.return_type_parsers.profile_field(
                 profile_field=profile_field),
-            await self._request(ENDPOINTS.PROFILE_FIELDS)))
+            (await self._request(ENDPOINTS.PROFILE_FIELDS)) or []))
 
-    async def show_person(self, person_id, details=True):
+    async def show_person(self, person_id: Id, details: bool = True):
         """Retrieve the details for a specific person by their ID.
 
         Args:
@@ -392,13 +231,501 @@ class BreezeApi(object):
                 self.list_profile_fields()
             )
 
+            if not person:
+                return None
+
             return self.return_type_parsers.person(
                 person=person,
                 profile_fields=profile_fields)
 
         else:
             params.append("details=0")
-            return self.return_type_parsers.person(person=await self._request(f"{ENDPOINTS.PEOPLE}/{person_id}?{'&'.join(params)}"))
+
+            person = await self._request(f"{ENDPOINTS.PEOPLE}/{person_id}?{'&'.join(params)}")
+
+            if not person:
+                return None
+
+            return self.return_type_parsers.person(person=person)
+
+    async def list_tags(self, folder_id: Id = None):
+        """List of tags
+
+        Args:
+          folder_id: If provided, only tags within that folder will be returned.
+
+        Returns:
+          JSON response. For example:
+            [
+            {
+                "id": "523928",
+                "name": "4th & 5th",
+                "created_on": "2018-09-10 09:19:40",
+                "folder_id": "1539"
+            },
+            {
+                "id": "51994",
+                "name": "6th Grade",
+                "created_on": "2018-02-06 06:40:40",
+                "folder_id": "1539"
+            },
+            {...}
+            ]"""
+
+        params = []
+        if folder_id:
+            params.append('folder_id=%s' % folder_id)
+
+        return list(map(
+            lambda tag: self.return_type_parsers.tag(tag=tag),
+            (await self._request('%s/list_tags/?%s' % (ENDPOINTS.TAGS, '&'.join(params)))) or []
+        ))
+
+    async def list_tag_folders(self):
+        """List of tag folders
+
+        Args: (none)
+
+        Returns:
+          JSON response, for example:
+             [
+             {
+                 "id": "1234567",
+                 "parent_id": "0",
+                 "name": "All Tags",
+                 "created_on": "2018-06-05 18:12:34"
+             },
+             {
+                 "id": "8234253",
+                 "parent_id": "120425",
+                 "name": "Kids",
+                 "created_on": "2018-06-05 18:12:10"
+             },
+             {
+                 "id": "1537253",
+                 "parent_id": "5923042",
+                 "name": "Small Groups",
+                 "created_on": "2018-09-10 09:19:40"
+             },
+             {
+                 "id": "20033",
+                 "parent_id": "20031",
+                 "name": "Student Ministries",
+                 "created_on": "2018-12-15 18:11:31"
+             }
+             ]"""
+
+        return list(map(
+            lambda tag_folder: self.return_type_parsers.tag_folder(
+                tag_folder=tag_folder),
+            (await self._request("%s/list_folders" % ENDPOINTS.TAGS)) or []
+        ))
+
+    async def list_events(self,
+                          start_date: datetime = None,
+                          end_date: datetime = None,
+                          category_id: Id = None,
+                          eligible: bool = False,
+                          details: bool = False,
+                          limit: int = 500
+                          ):
+        """Retrieve a list of events based on search criteria.
+
+        Args:
+          start_date: Events on or after(YYYY-MM-DD)
+          end_date: Events on or before(YYYY-MM-DD)
+          category_id: If supplied, only events on the specified calendar will be returned. Note that external calendars are not available via this call.
+          eligible: If set to 1, details about who is eligible to be checked in ("everyone", "tags", "forms", or "none") are returned(including tags associated with the event).
+          details: If set to True, additional event details will be returned(e.g. description, check in settings, etc)
+          limit: Number of events to return. Default is 500. Max is 1000.
+
+        Returns:
+          JSON response."""
+        params = []
+        if start_date:
+            start_date = type_parsing.date_to_str(start_date, "YYYY-MM-DD")
+            params.append(f"start={start_date}")
+        if end_date:
+            end_date = type_parsing.date_to_str(end_date, "YYYY-MM-DD")
+            params.append(f"end={end_date}")
+        if category_id:
+            params.append(f"category_id={category_id}")
+        if eligible:
+            params.append("eligible=1")
+        if details:
+            params.append("details=1")
+        if limit or limit == 0:
+            params.append("limit={limit}")
+
+        return list((map(
+            lambda event: self.return_type_parsers.event(event=event),
+            (await self._request('%s/?%s' % (ENDPOINTS.EVENTS, '&'.join(params)))) or []
+        )))
+
+    async def list_calendars(self):
+        """Retrieve a list of Calendars.
+        """
+        return list(map(
+            lambda calendar: self.return_type_parsers.calendar(
+                calendar=calendar),
+            (await self._request(f"{ENDPOINTS.EVENTS}/calendars/list")) or []
+        ))
+
+    async def list_locations(self):
+        """Retrieve a list of Locations.
+        """
+        return list(map(
+            lambda location: self.return_type_parsers.location(
+                location=location),
+            (await self._request(f"{ENDPOINTS.EVENTS}/locations")) or []
+        ))
+
+    async def list_attendance(self, instance_id: Id, details: bool = False, type="person"):
+        """Retrieve a list of attendees for a given event instance_id.
+
+          Args:
+            instance_id: The ID of the instance you'd like to return the attendance for
+            details: If set to true, details of the person will be included in the response
+            type: Determines if result should contain people or anonymous head count by setting to either 'person' or 'anonymous'
+
+          Returns:
+            JSON response."""
+
+        params = [f"instance_id={instance_id}"]
+        if details:
+            params.append("details=1")
+        if type:
+            params.append(f"type={type}")
+
+        return list(map(
+            lambda attendee: self.return_type_parsers.attendee(
+                attendee=attendee),
+            (await self._request(f"{ENDPOINTS.ATTENDANCE}/list/?{'&'.join(params)}")) or []
+        ))
+
+    async def list_eligible_people(self, instance_id: Id):
+        """Retrieve a list of eligible people for a give event instance_id.
+
+          Args:
+            instance_id: The ID of the instance you'd like to return the attendance for
+
+          Returns:
+            JSON response."""
+
+        params = ['instance_id=%s' % instance_id, ]
+
+        return list(map(
+            lambda person: self.return_type_parsers.person(person=person),
+            ((await self._request('%s/eligible?%s' %
+                                  (ENDPOINTS.ATTENDANCE, '&'.join(params)), timeout=180)) or [])
+        ))
+
+    async def list_contributions(self,
+                                 start_date: datetime = None,
+                                 end_date: datetime = None,
+                                 person_id: Id = None,
+                                 include_family: bool = False,
+                                 amount_min: Union[int, float] = None,
+                                 amount_max: Union[int, float] = None,
+                                 method_ids: List[Id] = None,
+                                 fund_ids: List[Id] = None,
+                                 envelope_number: Union[int, str] = None,
+                                 batches: Union[int, str] = None,
+                                 forms_ids: List[Id] = None,
+                                 pledge_ids: List[Id] = None):
+        """Retrieve a list of contributions.
+
+        Args:
+          start_date: Find contributions given on or after a specific date
+                      (ie. 2015-1-1); required.
+          end_date: Find contributions given on or before a specific date
+                    (ie. 2018-1-31); required.
+          person_id: ID of person's contributions to fetch. (ie. 9023482)
+          include_family: Include family members of person_id(must provide
+                          person_id); default: False.
+          amount_min: Contribution amounts equal or greater than.
+          amount_max: Contribution amounts equal or less than.
+          method_ids: List of method IDs.
+          fund_ids: List of fund IDs.
+          envelope_number: Envelope number.
+          batches: List of Batch numbers.
+          forms: List of form IDs.
+          pledge_ids: Pledge Campaign IDs. IDs accessible from list pledges query. Multiple ids separated by a dash(-).
+
+        Returns:
+          List of matching contributions.
+
+        Throws:
+          BreezeError on malformed request."""
+
+        params = []
+        if start_date:
+            start_date = type_parsing.date_to_str(start_date, "DD-MM-YYYY")
+            params.append(f"start={start_date}")
+        if end_date:
+            end_date = type_parsing.date_to_str(end_date, "DD-MM-YYYY")
+            params.append(f"end={end_date}")
+        if person_id:
+            params.append('person_id=%s' % person_id)
+        if include_family:
+            if not person_id:
+                raise BreezeError('include_family requires a person_id.')
+            params.append('include_family=1')
+        if amount_min:
+            params.append(f"amount_min={amount_min}")
+        if amount_max:
+            params.append(f"amount_max={amount_max}")
+        if method_ids:
+            params.append('method_ids=%s' % '-'.join(
+                map(lambda id: str(id), method_ids)))
+        if fund_ids:
+            params.append('fund_ids=%s' % '-'.join(
+                map(lambda id: str(id), fund_ids)))
+        if envelope_number:
+            params.append('envelope_number=%s' % envelope_number)
+        if batches:
+            params.append('batches=%s' % '-'.join(
+                map(lambda id: str(id), batches)))
+        if forms_ids:
+            params.append('forms=%s' % '-'.join(
+                map(lambda id: str(id), forms_ids)))
+        if pledge_ids:
+            params.append('pledge_ids=%s' % '-'.join(
+                map(lambda id: str(id), pledge_ids)))
+
+        return list(map(
+            lambda contribution: self.return_type_parsers.contribution(
+                contribution=contribution),
+            (await self._request('%s/list?%s' % (ENDPOINTS.CONTRIBUTIONS,
+                                                 '&'.join(params)))) or []
+        ))
+
+    async def list_funds(self, include_totals: bool = False):
+        """List all funds.
+
+        Args:
+          include_totals: Amount given to the fund should be returned.
+
+        Returns:
+          JSON Reponse."""
+
+        params = []
+        if include_totals:
+            params.append('include_totals=1')
+
+        return list(map(
+            lambda fund: self.return_type_parsers.fund(fund=fund),
+            (await self._request('%s/list?%s' %
+                                 (ENDPOINTS.FUNDS, '&'.join(params)))) or []
+        ))
+
+    async def list_campaigns(self):
+        """List of campaigns.
+
+        Returns:
+          JSON response."""
+
+        return list(map(
+            lambda campaign: self.return_type_parsers.campaign(
+                campaign=campaign),
+            (await self._request('%s/list_campaigns' % (ENDPOINTS.PLEDGES))) or []
+        ))
+
+    async def list_pledges(self, campaign_id: Id):
+        """List of pledges within a campaign.
+
+        Args:
+          campaign_id: ID number of a campaign.
+
+        Returns:
+          JSON response."""
+
+        return list(map(
+            lambda pledge: self.return_type_parsers.pledge(
+                pledge=pledge),
+            (await self._request('%s/list_pledges?campaign_id=%s' % (
+                ENDPOINTS.PLEDGES, campaign_id
+            ))) or []
+        ))
+
+    async def list_forms(self, is_archived: bool = False):
+        """List all forms.
+
+        Args:
+          is_archived: If set to True, archived forms will be returned instead of active forms.
+
+        Returns:
+          JSON Response."""
+
+        params = []
+        if is_archived:
+            params.append('is_archived=1')
+
+        return list(map(
+            lambda form: self.return_type_parsers.form(form=form),
+            (await self._request('%s/list_forms?%s' %
+                                 (ENDPOINTS.FORMS, '&'.join(params)))) or []
+        ))
+
+    async def list_form_fields(self, form_id: Id):
+        """List the fields for a given form.
+
+        Args:
+          form_id: The fields will be returned that correspond to the form id provided.
+
+        Returns:
+          JSON Reponse."""
+
+        params = ['form_id=%s' % form_id]
+
+        return list(map(
+            lambda form_field: self.return_type_parsers.form_field(
+                form_field=form_field),
+            (await self._request('%s/list_form_fields?%s' %
+                                 (ENDPOINTS.FORMS, '&'.join(params)))) or []
+        ))
+
+    async def list_form_entries(self, form_id: Id, details: bool = True):
+        """List all forms entries.
+
+        Args:
+          form_id: The entries will be returned that correspond to the numeric form id provided.
+
+          details: If set to True, the entry responses will be returned as well. The entry response array has key values that correspond to the form fields.
+
+        Returns:
+          JSON Reponse."""
+
+        params = ['form_id=%s' % form_id]
+        if details:
+            params.append('details=1')
+
+        return list(map(
+            lambda entry: self.return_type_parsers.form_entry(
+                entry=entry),
+            (await self._request(
+                '%s/list_form_entries?%s' %
+                (ENDPOINTS.FORMS, '&'.join(params)))) or []
+        ))
+
+    async def list_volunteers(self, instance_id: Id):
+        """List volunteers from a specific event.
+
+          Args:
+            instance_id: The id of the event instance you want to list the volunteers for.
+
+          Returns:
+            JSON response."""
+
+        params = ['instance_id=%s' % instance_id, ]
+
+        return list(map(
+            lambda volunteer: self.return_type_parsers.volunteer(
+                volunteer=volunteer),
+            (await self._request('%s/list?%s' %
+                                 (ENDPOINTS.VOLUNTEERS, '&'.join(params)))) or []
+        ))
+
+    async def list_volunteer_roles(self, instance_id: Id, show_quantity: bool = True):
+        """List volunteers from a specific event.
+
+          Args:
+            instance_id: The id of the event instance you want to retrieve the volunteer roles for.
+            show_quantity: Option to return quantity requested for each role.
+
+          Returns:
+            JSON response."""
+
+        params = ['instance_id=%s' % instance_id, ]
+        if show_quantity:
+            params.append('show_quantity=1')
+
+        return list(map(
+            lambda role: self.return_type_parsers.volunteer_role(role=role),
+            (await self._request('%s/list_roles?%s' %
+                                 (ENDPOINTS.VOLUNTEERS, '&'.join(params)))) or []
+        ))
+
+    async def get_account_summary(self):
+        """Retrieve the details for a specific account using the API key
+          and URL. It can also work to see if the key and URL are valid.
+
+        Returns:
+          JSON response. For example:
+          {
+            "id":"1234",
+            "name":"Grace Church",
+            "subdomain":"gracechurchdemo",
+            "status":"1",
+            "created_on":"2018-09-10 09:19:35",
+            "details":{
+                "timezone":"America\/New_York",
+                "country":{
+                    "id":"2",
+                    "name":"United States of America",
+                    "abbreviation":"USA",
+                    "abbreviation_2":"US",
+                    "currency":"USD",
+                    "currency_symbol":"$",
+                    "date_format":"MDY",
+                    "sms_prefix":"1"
+                }
+            }
+          }
+          """
+
+        account = await self._request(f"{ENDPOINTS.BREEZE_ACCOUNT}/summary")
+
+        if not account:
+            return None
+
+        return self.return_type_parsers.breeze_account(account=account)
+
+    async def get_account_log(self,
+                              action: AccountLogActions, start_date: datetime = None,
+                              end_date: datetime = None,
+                              user_id: Id = None,
+                              details: bool = False,
+                              limit: int = 500):
+        """Retrieve a list of events based on search criteria.
+
+        Args:
+             action: A required parameter indicating which type of logged action should be returned.
+
+             start_date: The start date range for actions that should be returned. If not provided, logged items will be fetched from as long ago as the log is storing.
+
+             end_date: The end date range for actions that should be returned. If not provided, logged items will be fetched up until the current moment.
+
+             user_id: The user_id of the user who made the logged action. If not provided, all users' actions will be returned.
+
+             details: If details about the logged action should be returned. Note that this column is not guaranteed to be standardized and should not be relied upon for anything more than a description.
+
+             limit: The number of logged items to return. Max is 3,000.
+
+        returns: JSON response."""
+
+        params = [f"action={action.name}"]
+
+        if start_date:
+            params.append(
+                f"start={type_parsing.date_to_str(start_date, 'YYYY-MM-DD')}")
+        if end_date:
+            params.append(
+                f"end={type_parsing.date_to_str(end_date, 'YYYY-MM-DD')}")
+        if user_id:
+            params.append(f"user_id={user_id}")
+        if limit:
+            params.append(f"limit={min(limit, 3000)}")
+        if details:
+            params.append("details=1")
+
+        return list(map(
+            lambda account_log: self.return_type_parsers.breeze_account_log(
+                account_log=account_log),
+            (await self._request(f"{ENDPOINTS.BREEZE_ACCOUNT}/list_log?{'&'.join(params)}", timeout=180)) or []
+        ))
+
+    # write, update, delete
 
     def add_person(self, first_name, last_name, fields_json=None):
         """Adds a new person into the database.
@@ -460,61 +787,6 @@ class BreezeApi(object):
                 ENDPOINTS.PEOPLE, person_id, fields_json
             ))
 
-    async def list_events(self,
-                          start_date: datetime = None,
-                          end_date: datetime = None,
-                          category_id=None,
-                          eligible=False,
-                          details=False,
-                          limit=500
-                          ):
-        """Retrieve a list of events based on search criteria.
-
-        Args:
-          start_date: Events on or after(YYYY-MM-DD)
-          end_date: Events on or before(YYYY-MM-DD)
-          category_id: If supplied, only events on the specified calendar will be returned. Note that external calendars are not available via this call.
-          eligible: If set to 1, details about who is eligible to be checked in ("everyone", "tags", "forms", or "none") are returned(including tags associated with the event).
-          details: If set to True, additional event details will be returned(e.g. description, check in settings, etc)
-          limit: Number of events to return. Default is 500. Max is 1000.
-
-        Returns:
-          JSON response."""
-        params = []
-        if start_date:
-            start_date = type_parsing.date_to_str(start_date, "YYYY-MM-DD")
-            params.append(f"start={start_date}")
-        if end_date:
-            end_date = type_parsing.date_to_str(end_date, "YYYY-MM-DD")
-            params.append(f"end={end_date}")
-        if category_id:
-            params.append(f"category_id={category_id}")
-        if eligible:
-            params.append("eligible=1")
-        if details:
-            params.append("details=1")
-        if limit or limit == 0:
-            params.append("limit={limit}")
-
-        return list((map(
-            lambda event: self.return_type_parsers.event(event=event),
-            await self._request('%s/?%s' % (ENDPOINTS.EVENTS, '&'.join(params)))
-        )))
-
-    async def list_calendars(self):
-        """Retrieve a list of Calendars.
-        """
-        return list(map(
-            lambda calendar: self.return_type_parsers.calendar(
-                calendar=calendar),
-            await self._request(f"{ENDPOINTS.EVENTS}/calendars/list")
-        ))
-
-    def list_locations(self):
-        """Retrieve a list of Locations.
-        """
-        return self._request(f"{ENDPOINTS.EVENTS}/locations")
-
     def event_check_in(self, person_id, event_instance_id):
         """Checks in a person into an event.
 
@@ -541,77 +813,6 @@ class BreezeApi(object):
             '%s/attendance/delete?person_id=%s&instance_id=%s' % (
                 ENDPOINTS.EVENTS, str(person_id), str(event_instance_id)
             ))
-
-    async def list_attendance(self, instance_id, details=False, type="person"):
-        """Retrieve a list of attendees for a given event instance_id.
-
-          Args:
-            instance_id: The ID of the instance you'd like to return the attendance for
-            details: If set to true, details of the person will be included in the response
-            type: Determines if result should contain people or anonymous head count by setting to either 'person' or 'anonymous'
-
-          Returns:
-            JSON response."""
-
-        params = [f"instance_id={instance_id}"]
-        if details:
-            params.append("details=1")
-        if type:
-            params.append(f"type={type}")
-
-        return list(map(
-            lambda attendee: self.return_type_parsers.attendee(
-                attendee=attendee),
-            await self._request(f"{ENDPOINTS.ATTENDANCE}/list/?{'&'.join(params)}")
-        ))
-
-    def list_eligible_people(self, instance_id):
-        """Retrieve a list of eligible people for a give event instance_id.
-
-          Args:
-            instance_id: The ID of the instance you'd like to return the attendance for
-
-          Returns:
-            JSON response."""
-
-        params = ['instance_id=%s' % instance_id, ]
-
-        return self._request('%s/eligible?%s' %
-                             (ENDPOINTS.ATTENDANCE, '&'.join(params)), timeout=180)
-
-    async def list_volunteers(self, instance_id):
-        """List volunteers from a specific event.
-
-          Args:
-            instance_id: The id of the event instance you want to list the volunteers for.
-
-          Returns:
-            JSON response."""
-
-        params = ['instance_id=%s' % instance_id, ]
-
-        return list(map(
-            lambda volunteer: self.return_type_parsers.volunteer(
-                volunteer=volunteer),
-            await self._request('%s/list?%s' %
-                                (ENDPOINTS.VOLUNTEERS, '&'.join(params)))
-        ))
-
-    def list_volunteer_roles(self, instance_id, show_quantity=True):
-        """List volunteers from a specific event.
-
-          Args:
-            instance_id: The id of the event instance you want to retrieve the volunteer roles for.
-            show_quantity: Option to return quantity requested for each role.
-
-          Returns:
-            JSON response."""
-
-        params = ['instance_id=%s' % instance_id, ]
-        if show_quantity:
-            params.append('show_quantity=1')
-        return self._request('%s/list_roles?%s' %
-                             (ENDPOINTS.VOLUNTEERS, '&'.join(params)))
 
     def add_contribution(self,
                          date=None,
@@ -826,170 +1027,6 @@ class BreezeApi(object):
         ))
         return response['payment_id']
 
-    async def list_contributions(self,
-                                 start_date: datetime = None,
-                                 end_date: datetime = None,
-                                 person_id=None,
-                                 include_family=False,
-                                 amount_min: Union[int, float] = None,
-                                 amount_max: Union[int, float] = None,
-                                 method_ids=None,
-                                 fund_ids=None,
-                                 envelope_number=None,
-                                 batches=None,
-                                 forms=None,
-                                 pledge_ids=None):
-        """Retrieve a list of contributions.
-
-        Args:
-          start_date: Find contributions given on or after a specific date
-                      (ie. 2015-1-1); required.
-          end_date: Find contributions given on or before a specific date
-                    (ie. 2018-1-31); required.
-          person_id: ID of person's contributions to fetch. (ie. 9023482)
-          include_family: Include family members of person_id(must provide
-                          person_id); default: False.
-          amount_min: Contribution amounts equal or greater than.
-          amount_max: Contribution amounts equal or less than.
-          method_ids: List of method IDs.
-          fund_ids: List of fund IDs.
-          envelope_number: Envelope number.
-          batches: List of Batch numbers.
-          forms: List of form IDs.
-          pledge_ids: Pledge Campaign IDs. IDs accessible from list pledges query. Multiple ids separated by a dash(-).
-
-        Returns:
-          List of matching contributions.
-
-        Throws:
-          BreezeError on malformed request."""
-
-        params = []
-        if start_date:
-            start_date = type_parsing.date_to_str(start_date, "DD-MM-YYYY")
-            params.append(f"start={start_date}")
-        if end_date:
-            end_date = type_parsing.date_to_str(end_date, "DD-MM-YYYY")
-            params.append(f"end={end_date}")
-        if person_id:
-            params.append('person_id=%s' % person_id)
-        if include_family:
-            if not person_id:
-                raise BreezeError('include_family requires a person_id.')
-            params.append('include_family=1')
-        if amount_min:
-            params.append(f"amount_min={amount_min}")
-        if amount_max:
-            params.append(f"amount_max={amount_max}")
-        if method_ids:
-            params.append('method_ids=%s' % '-'.join(method_ids))
-        if fund_ids:
-            params.append('fund_ids=%s' % '-'.join(fund_ids))
-        if envelope_number:
-            params.append('envelope_number=%s' % envelope_number)
-        if batches:
-            params.append('batches=%s' % '-'.join(batches))
-        if forms:
-            params.append('forms=%s' % '-'.join(forms))
-        if pledge_ids:
-            params.append('pledge_ids=%s' % '-'.join(pledge_ids))
-
-        return list(map(
-            lambda contribution: self.return_type_parsers.contribution(
-                contribution=contribution),
-            await self._request('%s/list?%s' % (ENDPOINTS.CONTRIBUTIONS,
-                                                '&'.join(params)))
-        ))
-
-    async def list_funds(self, include_totals=False):
-        """List all funds.
-
-        Args:
-          include_totals: Amount given to the fund should be returned.
-
-        Returns:
-          JSON Reponse."""
-
-        params = []
-        if include_totals:
-            params.append('include_totals=1')
-
-        return list(map(
-            lambda fund: self.return_type_parsers.fund(fund=fund),
-            await self._request('%s/list?%s' %
-                                (ENDPOINTS.FUNDS, '&'.join(params)))
-        ))
-
-    async def list_forms(self, is_archived=False):
-        """List all forms.
-
-        Args:
-          is_archived: If set to True, archived forms will be returned instead of active forms.
-
-        Returns:
-          JSON Reponse."""
-
-        params = []
-        if is_archived:
-            params.append('is_archived=1')
-
-        return list(map(
-            lambda form: self.return_type_parsers.form(form=form),
-            await self._request('%s/list_forms?%s' %
-                                (ENDPOINTS.FORMS, '&'.join(params)))
-        ))
-
-    async def list_form_fields(self, form_id):
-        """List the fields for a given form.
-
-        Args:
-          form_id: The fields will be returned that correspond to the form id provided.
-
-        Returns:
-          JSON Reponse."""
-
-        params = ['form_id=%s' % form_id]
-
-        return list(map(
-            lambda form_field: self.return_type_parsers.form_field(
-                form_field=form_field),
-            await self._request('%s/list_form_fields?%s' %
-                                (ENDPOINTS.FORMS, '&'.join(params)))
-        ))
-
-    async def list_form_entries(self, form_id, details=True):
-        """List all forms entries.
-
-        Args:
-          form_id: The entries will be returned that correspond to the numeric form id provided.
-
-          details: If set to True, the entry responses will be returned as well. The entry response array has key values that correspond to the form fields.
-
-        Returns:
-          JSON Reponse."""
-
-        params = ['form_id=%s' % form_id]
-        if details:
-            params.append('details=1')
-            (entries, form_fields) = await asyncio.gather(
-                self._request('%s/list_form_entries?%s' %
-                              (ENDPOINTS.FORMS, '&'.join(params))),
-                self.list_form_fields(form_id=form_id)
-            )
-
-            return list(map(
-                lambda entry: self.return_type_parsers.form_entry(
-                    entry=entry, form_fields=form_fields),
-                entries
-            ))
-        else:
-            return list(map(
-                lambda entry: self.return_type_parsers.form_entry(
-                    entry=entry),
-                (await self._request('%s/list_form_entries?%s' %
-                                     (ENDPOINTS.FORMS, '&'.join(params)))).values()
-            ))
-
     def remove_form_entry(self, entry_id):
         """Remove Form Entry.
 
@@ -1002,108 +1039,6 @@ class BreezeApi(object):
         params = ['entry_id=%s' % entry_id]
         return self._request('%s/remove_form_entry?%s' %
                              (ENDPOINTS.FORMS, '&'.join(params)))
-
-    async def list_campaigns(self):
-        """List of campaigns.
-
-        Returns:
-          JSON response."""
-
-        return list(map(
-            lambda campaign: self.return_type_parsers.campaign(
-                campaign=campaign),
-            await self._request('%s/list_campaigns' % (ENDPOINTS.PLEDGES))
-        ))
-
-    async def list_pledges(self, campaign_id):
-        """List of pledges within a campaign.
-
-        Args:
-          campaign_id: ID number of a campaign.
-
-        Returns:
-          JSON response."""
-
-        return list(map(
-            lambda pledge: self.return_type_parsers.pledge(
-                pledge=pledge),
-            await self._request('%s/list_pledges?campaign_id=%s' % (
-                ENDPOINTS.PLEDGES, campaign_id
-            ))
-        ))
-
-    async def list_tags(self, folder_id=None):
-        """List of tags
-
-        Args:
-          folder_id: If provided, only tags within that folder will be returned.
-
-        Returns:
-          JSON response. For example:
-            [
-            {
-                "id": "523928",
-                "name": "4th & 5th",
-                "created_on": "2018-09-10 09:19:40",
-                "folder_id": "1539"
-            },
-            {
-                "id": "51994",
-                "name": "6th Grade",
-                "created_on": "2018-02-06 06:40:40",
-                "folder_id": "1539"
-            },
-            {...}
-            ]"""
-
-        params = []
-        if folder_id:
-            params.append('folder_id=%s' % folder_id)
-
-        return list(map(
-            lambda tag: self.return_type_parsers.tag(tag=tag),
-            await self._request('%s/list_tags/?%s' % (ENDPOINTS.TAGS, '&'.join(params)))
-        ))
-
-    async def list_tag_folders(self):
-        """List of tag folders
-
-        Args: (none)
-
-        Returns:
-          JSON response, for example:
-             [
-             {
-                 "id": "1234567",
-                 "parent_id": "0",
-                 "name": "All Tags",
-                 "created_on": "2018-06-05 18:12:34"
-             },
-             {
-                 "id": "8234253",
-                 "parent_id": "120425",
-                 "name": "Kids",
-                 "created_on": "2018-06-05 18:12:10"
-             },
-             {
-                 "id": "1537253",
-                 "parent_id": "5923042",
-                 "name": "Small Groups",
-                 "created_on": "2018-09-10 09:19:40"
-             },
-             {
-                 "id": "20033",
-                 "parent_id": "20031",
-                 "name": "Student Ministries",
-                 "created_on": "2018-12-15 18:11:31"
-             }
-             ]"""
-
-        return list(map(
-            lambda tag_folder: self.return_type_parsers.tag_folder(
-                tag_folder=tag_folder),
-            await self._request("%s/list_folders" % ENDPOINTS.TAGS)
-        ))
 
     def add_tag(self, name, folder_id=None):
         """Add a new tag
