@@ -1,7 +1,6 @@
 import json
 import re
-from typing import Any, List, Union, Callable
-from typing_extensions import ParamSpec
+from typing import Any, List, Union, Callable, TypeVar
 from datetime import datetime
 from .accountLogActions import AccountLogActions
 
@@ -125,8 +124,8 @@ class ReturnTypeParsers(object):
         return type_parsing.str_to_date(date=value)
 
     def _parse_types_(self, to_parse, custom_type_parser: Callable[[
-        ParamSpec(name="key", bound=str),
-        ParamSpec(name="value")
+        TypeVar(name="key", bound=str),
+        TypeVar(name="value")
     ], Any] = None):
         if isinstance(to_parse, list):
 
