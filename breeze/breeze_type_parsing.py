@@ -66,7 +66,7 @@ class type_parsing:
     # ints
     @staticmethod
     def str_to_int(int_str: Union[int, float, str]):
-        if isinstance(int_str, str) and bool(re.match(r"^[0-9]+$", int_str)):
+        if isinstance(int_str, str) and bool(re.match(r"^-?[0-9]+$", int_str)):
             num = int(int_str)
             # Do not convert int greater than 64bit. Note: python 3 ints are
             # bonded only by memory
@@ -80,7 +80,7 @@ class type_parsing:
     # floats
     @staticmethod
     def str_to_float(float_str: Union[int, float, str]):
-        if isinstance(float_str, str) and bool(re.match(r"^[0-9]*\.[0-9]+$", float_str)):
+        if isinstance(float_str, str) and bool(re.match(r"^-?[0-9]*\.[0-9]+$", float_str)):
             return float(float_str)
         else:
             return float_str
