@@ -96,10 +96,13 @@ class BreezeApi(object):
         # TODO(alex): use urlparse to check url format.
         if not (self.breeze_url and self.breeze_url.startswith('https://') and
                 self.breeze_url.find('.breezechms.')):
+            logging.exception(
+                'You must provide your breeze_url as subdomain.breezechms.com')
             raise BreezeError('You must provide your breeze_url as ',
                               'subdomain.breezechms.com')
 
         if not self.api_key:
+            logging.exception('You must provide an API key.')
             raise BreezeError('You must provide an API key.')
 
     async def _request(self, endpoint, params=None, headers=None, timeout=60, attempts=0):
@@ -139,7 +142,7 @@ class BreezeApi(object):
             #  500 errors
             if response.status_code >= 500 and attempts < self.retries:
                 attempts = attempts + 1
-                logging.debug(
+                logging.warning(
                     f"Error Code {response.status_code}: {url}.  Retry attempt number {attempts} of {self.retries}.")
                 # sleep for 100 ms for each retry for a max of 1000ms
                 await asyncio.sleep(min((attempts/10), 1))
@@ -151,10 +154,11 @@ class BreezeApi(object):
 
             response = response.json()
         except (httpx.RequestError, Exception) as error:
-
+            logging.exception(str(error))
             raise BreezeError(error)
         else:
             if not self._request_succeeded(response):
+                logging.exception(str(response))
                 raise BreezeError(response)
             logging.debug('JSON Response: %s', response)
             return response
@@ -565,6 +569,7 @@ class BreezeApi(object):
             params.append('person_id=%s' % person_id)
         if include_family:
             if not person_id:
+                logging.exception('include_family requires a person_id.')
                 raise BreezeError('include_family requires a person_id.')
             params.append('include_family=1')
         if amount_min:

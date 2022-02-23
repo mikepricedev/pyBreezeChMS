@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from typing import Any, List, Union, Callable, TypeVar
 from datetime import datetime
@@ -40,6 +41,8 @@ class type_parsing:
                     except ValueError:
                         return None
                     except Exception as e:
+                        logging.exception(
+                            f"Error type_parsing.str_to_date.  {str(e)}")
                         raise e
         return date
 
