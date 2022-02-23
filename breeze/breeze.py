@@ -18,13 +18,13 @@ Usage:
 __author__ = 'alexortizrosado@gmail.com (Alex Ortiz-Rosado)'
 
 import logging
-from typing import List, Union
+from typing import List, Literal, Union
 import asyncio
 import httpx
 from datetime import datetime
 
 from .breeze_type_parsing import type_parsing, ReturnTypeParsers
-from .accountLogActions import AccountLogActions
+from .account_log_actions import AccountLogActions
 
 from .utils import make_enum
 
@@ -362,6 +362,74 @@ class BreezeApi(object):
             (await self._request('%s/?%s' % (ENDPOINTS.EVENTS, '&'.join(params)))) or []
         )))
 
+    async def show_event(self,
+                         instance_id: Id,
+                         eligible: bool = False,
+                         details: bool = False
+                         ):
+        """Retrieve a list of events based on search criteria.
+
+          Args:
+            instance_id: The id of the event instance that should be returned.
+
+            eligible: If set to True, details about who is eligible to be checked in ("everyone", "tags", "forms", or "none") are returned (including tags associated with the event).
+
+            details: If set to 1, additional event details will be returned (e.g. description, check in settings, etc).
+
+        Returns:
+          JSON response."""
+        params = [f"instance_id={instance_id}"]
+        if eligible:
+            params.append("eligible=1")
+        if details:
+            params.append("details=1")
+
+        event = (await self._request(f"{ENDPOINTS.EVENTS}/list_event?{'&'.join(params)}")) or None
+
+        if event == None:
+            return event
+        else:
+            return self.return_type_parsers.event(event=event)
+
+    async def list_event_schedule(self,
+                                  instance_id: Id,
+                                  schedule_direction: Literal["before",
+                                                              "after"] = "before",
+                                  schedule_limit: int = 10,
+                                  eligible: bool = False,
+                                  details: bool = False
+                                  ):
+        """Retrieve a list of events from a series.
+
+          Args:
+            instance_id: The id of the event instance that should be returned.
+
+            schedule_direction: If including the schedule, should it include events before the instance_id or after the instance_id.
+
+            schedule_limit:  If including the schedule, how many events in the series should be returned. Default is 10. Max is 100.
+
+            eligible: If set to True, details about who is eligible to be checked in ("everyone", "tags", "forms", or "none") are returned (including tags associated with the event).
+
+            details: If set to 1, additional event details will be returned (e.g. description, check in settings, etc).
+
+        Returns:
+          JSON response."""
+        params = [f"instance_id={instance_id}&schedule=1"]
+
+        if schedule_direction:
+            params.append(f"schedule_direction={schedule_direction}")
+        if schedule_limit:
+            params.append(f"schedule_limit={schedule_limit}")
+        if eligible:
+            params.append("eligible=1")
+        if details:
+            params.append("details=1")
+
+        return list((map(
+            lambda event: self.return_type_parsers.event(event=event),
+            (await self._request(f"{ENDPOINTS.EVENTS}/list_event?{'&'.join(params)}")) or []
+        )))
+
     async def list_calendars(self):
         """Retrieve a list of Calendars.
         """
@@ -626,7 +694,8 @@ class BreezeApi(object):
                                  (ENDPOINTS.VOLUNTEERS, '&'.join(params)))) or []
         ))
 
-    async def list_volunteer_roles(self, instance_id: Id, show_quantity: bool = True):
+    async def list_volunteer_roles(self, instance_id: Id,
+                                   show_quantity: bool = True):
         """List volunteers from a specific event.
 
           Args:

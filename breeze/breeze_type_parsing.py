@@ -2,7 +2,7 @@ import json
 import re
 from typing import Any, List, Union, Callable, TypeVar
 from datetime import datetime
-from .accountLogActions import AccountLogActions
+from .account_log_actions import AccountLogActions
 
 
 class type_parsing:
