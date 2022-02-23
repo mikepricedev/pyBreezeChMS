@@ -62,25 +62,37 @@ class BreezeApi(object):
     def __init__(self, breeze_url, api_key,
                  dry_run=False,
                  client=httpx.AsyncClient(verify=True),
-                 return_type_parsers=ReturnTypeParsers()):
+                 return_type_parsers=ReturnTypeParsers(),
+                 retries=10
+                 ):
         """Instantiates the BreezeApi with your Breeze account information.
 
         Args:
           breeze_url: Fully qualified domain for your organizations Breeze
                       service.
+
           api_key: Unique Breeze API key. For instructions on finding your
                    organizations API key, see:
                    http://breezechms.com/docs#extensions_api
+
           dry_run: Enable no-op mode, which disables requests from being made.
                    When combined with debug, this allows debugging requests
                    without affecting data in your Breeze account.
-          connection: Requests compatible session or ConnectionCompatibility sub class."""
+
+          client: Async requests compatible session.
+
+          return_type_parsers: ReturnTypeParsers derived class.  To provide parsing for breeze types.  The Breeze API returns everything as a string.
+
+          retries: The breeze api can be unreliable production random 500 server errors.  How many times do you want reattempt the call on a 500 error.
+
+          """
 
         self.breeze_url = breeze_url
         self.api_key = api_key
         self.dry_run = dry_run
         self.client = client
         self.return_type_parsers = return_type_parsers
+        self.retries = retries
         # TODO(alex): use urlparse to check url format.
         if not (self.breeze_url and self.breeze_url.startswith('https://') and
                 self.breeze_url.find('.breezechms.')):
@@ -90,7 +102,7 @@ class BreezeApi(object):
         if not self.api_key:
             raise BreezeError('You must provide an API key.')
 
-    async def _request(self, endpoint, params=None, headers=None, timeout=60):
+    async def _request(self, endpoint, params=None, headers=None, timeout=60, attempts=0):
         """Makes an HTTP request to a given url.
 
         Args:
@@ -119,11 +131,27 @@ class BreezeApi(object):
         logging.debug('Making request to %s', url)
         if self.dry_run:
             return
-        response = None
+        response: httpx.Response = None
         try:
             response = await self.client.get(url, ** keywords)
+
+            # The breeze api server can be unreliable producing random
+            #  500 errors
+            if response.status_code >= 500 and attempts < self.retries:
+                attempts = attempts + 1
+                logging.debug(
+                    f"Error Code {response.status_code}: {url}.  Retry attempt number {attempts} of {self.retries}.")
+                # sleep for 100 ms for each retry for a max of 1000ms
+                await asyncio.sleep(min((attempts/10), 1))
+                return self._request(endpoint=endpoint,
+                                     params=params,
+                                     headers=headers,
+                                     timeout=timeout,
+                                     attempts=attempts)
+
             response = response.json()
         except (httpx.RequestError, Exception) as error:
+
             raise BreezeError(error)
         else:
             if not self._request_succeeded(response):
