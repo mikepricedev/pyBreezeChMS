@@ -83,8 +83,7 @@ class BreezeApi(object):
 
           return_type_parsers: ReturnTypeParsers derived class.  To provide parsing for breeze types.  The Breeze API returns everything as a string.
 
-          retries: The breeze api can be unreliable production random 500 server errors.  How many times do you want reattempt the call on a 500 error.
-
+          retries: How many times to retry a request after a 500 or timeout error.  The breeze api can be unreliable production random 500 and timeout errors.
           """
 
         self.breeze_url = breeze_url
@@ -153,6 +152,20 @@ class BreezeApi(object):
                                      attempts=attempts)
 
             response = response.json()
+        except httpx.ReadTimeout as error:
+            if attempts < self.retries:
+                attempts = attempts + 1
+                logging.warning(
+                    f"Read Timeout Error: {str(error)}.  Retry attempt number {attempts} of {self.retries}.")
+                # sleep for 100 ms for each retry for a max of 1000ms
+                await asyncio.sleep(min((attempts/10), 1))
+                return self._request(endpoint=endpoint,
+                                     params=params,
+                                     headers=headers,
+                                     timeout=timeout,
+                                     attempts=attempts)
+            else:
+                raise error
         except (httpx.RequestError, Exception) as error:
             logging.exception(str(error))
             raise BreezeError(error)
