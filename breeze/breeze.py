@@ -145,11 +145,11 @@ class BreezeApi(object):
                     f"Error Code {response.status_code}: {url}.  Retry attempt number {attempts} of {self.retries}.")
                 # sleep for 100 ms for each retry for a max of 1000ms
                 await asyncio.sleep(min((attempts/10), 1))
-                return self._request(endpoint=endpoint,
-                                     params=params,
-                                     headers=headers,
-                                     timeout=timeout,
-                                     attempts=attempts)
+                return await self._request(endpoint=endpoint,
+                                           params=params,
+                                           headers=headers,
+                                           timeout=timeout,
+                                           attempts=attempts)
 
             response = response.json()
         except httpx.ReadTimeout as error:
@@ -159,11 +159,11 @@ class BreezeApi(object):
                     f"Read Timeout Error: {str(error)}.  Retry attempt number {attempts} of {self.retries}.")
                 # sleep for 100 ms for each retry for a max of 1000ms
                 await asyncio.sleep(min((attempts/10), 1))
-                return self._request(endpoint=endpoint,
-                                     params=params,
-                                     headers=headers,
-                                     timeout=timeout,
-                                     attempts=attempts)
+                return await self._request(endpoint=endpoint,
+                                           params=params,
+                                           headers=headers,
+                                           timeout=timeout,
+                                           attempts=attempts)
             else:
                 raise error
         except (httpx.RequestError, Exception) as error:
@@ -1170,6 +1170,9 @@ class BreezeApi(object):
 
         return self._request('%s/add_tag?%s' % (ENDPOINTS.TAGS,
                                                 '&'.join(params)))
+
+    def delete_tag(self, tag_id: Id):
+        return self._request(f"{ENDPOINTS.TAGS}/delete_tag?tag_id={tag_id}")
 
     def assign_tag(self,
                    person_id,
