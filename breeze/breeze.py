@@ -8,7 +8,7 @@ Usage:
 
   breeze_api = breeze.BreezeApi(
       breeze_url='https://demo.breezechms.com',
-      api_key='5c2d2cbacg3...')
+      breeze_api_key='5c2d2cbacg3...')
   people = breeze_api.get_people();
 
   for person in people:
@@ -17,6 +17,7 @@ Usage:
 
 __author__ = 'alexortizrosado@gmail.com (Alex Ortiz-Rosado)'
 
+import os
 import logging
 from typing import List, Literal, Union
 import asyncio
@@ -59,7 +60,11 @@ class BreezeApi(object):
 
     return_type_parsers: ReturnTypeParsers
 
-    def __init__(self, breeze_url, api_key,
+    def __init__(self,
+                 breeze_sub_domain: str = None,
+                 breeze_tld: Union[str, None] = "breezechms.com",
+                 breeze_url: str = None,
+                 breeze_api_key: str = None,
                  dry_run=False,
                  client=httpx.AsyncClient(verify=True),
                  return_type_parsers=ReturnTypeParsers(),
@@ -68,41 +73,90 @@ class BreezeApi(object):
         """Instantiates the BreezeApi with your Breeze account information.
 
         Args:
-          breeze_url: Fully qualified domain for your organizations Breeze
-                      service.
+          breeze_sub_domain: The sub domain portion of your organizations Breeze
+              service url e.g. https://{sub_domain}.breezechms.com. Overridden
+              by env var 'BREEZE_SUB_DOMAIN' and/or 'breeze_url'.
 
-          api_key: Unique Breeze API key. For instructions on finding your
-                   organizations API key, see:
-                   http://breezechms.com/docs#extensions_api
+          breeze_tld: The breeze top level domain. Default: 'breezechms.com'.
+              Overridden by env var 'BREEZE_TLD' and/or 'breeze_url'
+
+          breeze_url: Fully qualified domain for your organizations Breeze
+              service. Overridden by env var 'BREEZE_URL'.  Note when provided
+              either by int argument or env var, 'breeze_sub_domain' and
+              'breeze_tld' are ignored.
+
+          breeze_api_key: Unique Breeze API key. Overriddent by env var
+              'BREEZE_API_KEY'.  For instructions on finding your organizations
+              API key, see: http://breezechms.com/docs#extensions_api.
 
           dry_run: Enable no-op mode, which disables requests from being made.
-                   When combined with debug, this allows debugging requests
-                   without affecting data in your Breeze account.
+              When combined with debug, this allows debugging requests without
+              affecting data in your Breeze account.
 
           client: Async requests compatible session.
 
-          return_type_parsers: ReturnTypeParsers derived class.  To provide parsing for breeze types.  The Breeze API returns everything as a string.
+          return_type_parsers: ReturnTypeParsers derived class.  To provide
+              parsing for breeze types.  The Breeze API returns everything as a
+              string.
 
-          retries: How many times to retry a request after a 500 or timeout error.  The breeze api can be unreliable production random 500 and timeout errors.
+          retries: How many times to retry a request after a 500 or timeout
+              error.  The breeze api can be unreliable production random 500
+              and timeout errors.
           """
 
+        breeze_sub_domain = os.getenv(key="BREEZE_SUB_DOMAIN",
+                                      default=breeze_sub_domain)
+
+        breeze_tld = os.getenv(key="BREEZE_TLD",
+                               default=breeze_tld)
+
+        breeze_url = os.getenv(key="BREEZE_URL",
+                               default=breeze_url)
+
+        breeze_api_key = os.getenv(key="BREEZE_API_KEY",
+                                   default=breeze_api_key)
+
+        if not breeze_api_key:
+            error_msg = "Breeze api key not found.  Provided api key in init arg 'breeze_api_key' or in the env var 'BREEZE_API_KEY'"
+
+            logging.exception(error_msg)
+            raise BreezeError(error_msg)
+
+        if not breeze_url:
+            if not breeze_tld or not breeze_sub_domain:
+                if not breeze_tld and not breeze_sub_domain:
+                    error_msg = "Breeze url not found.  Provided your orgs full breeze url in the init arg 'breeze_url' or in the env var 'BREEZE_URL'. Alternatively provided the breeze tdl and your orgs breeze subdomain in the init args 'breeze_sub_domain' and 'breeze_tld' or in the env vars 'BREEZE_SUB_DOMAIN' and 'BREEZE_TLD'."
+
+                    logging.exception(error_msg)
+                    raise BreezeError(error_msg)
+
+                elif not breeze_tld:
+                    error_msg = "Breeze url not found.  Provided your orgs full breeze url in the init arg 'breeze_url' or in the env var 'BREEZE_URL'. Alternatively provided the breeze tdl in the init arg 'breeze_tld' or in the env var 'BREEZE_TLD'."
+
+                    logging.exception(error_msg)
+                    raise BreezeError(error_msg)
+
+                else:
+                    error_msg = "Breeze url not found.  Provided your orgs full breeze url in the init arg 'breeze_url' or in the env var 'BREEZE_URL'. Alternatively provided your orgs breeze subdomain in the init arg 'breeze_sub_domain' or in the env var 'BREEZE_SUB_DOMAIN'."
+
+                    logging.exception(error_msg)
+                    raise BreezeError(error_msg)
+            else:
+                breeze_url = f"https://{breeze_sub_domain}.{breeze_tld}"
+
         self.breeze_url = breeze_url
-        self.api_key = api_key
+        self.breeze_api_key = breeze_api_key
         self.dry_run = dry_run
         self.client = client
         self.return_type_parsers = return_type_parsers
         self.retries = retries
-        # TODO(alex): use urlparse to check url format.
+
         if not (self.breeze_url and self.breeze_url.startswith('https://') and
                 self.breeze_url.find('.breezechms.')):
             logging.exception(
                 'You must provide your breeze_url as subdomain.breezechms.com')
             raise BreezeError('You must provide your breeze_url as ',
                               'subdomain.breezechms.com')
-
-        if not self.api_key:
-            logging.exception('You must provide an API key.')
-            raise BreezeError('You must provide an API key.')
 
     async def _request(self, endpoint, params=None, headers=None, timeout=60, attempts=0):
         """Makes an HTTP request to a given url.
@@ -122,7 +176,7 @@ class BreezeApi(object):
             headers = {}
         headers.update({
             'Content-Type': 'application/json',
-            'Api-Key': self.api_key}
+            'Api-Key': self.breeze_api_key}
         )
 
         if params is None:
