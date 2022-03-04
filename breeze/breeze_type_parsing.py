@@ -2,8 +2,18 @@ import json
 import logging
 import re
 from typing import Any, List, Union, Callable, TypeVar
-from datetime import datetime
+from datetime import datetime, date
 from .account_log_actions import AccountLogActions
+
+
+class JSONSerial(json.JSONEncoder):
+    """Adds ISO date serialization for datetime and date objects."""
+
+    def default(self, obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        else:
+            return json.JSONEncoder.default(self, obj)
 
 
 class type_parsing:

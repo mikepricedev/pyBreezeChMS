@@ -24,7 +24,7 @@ import asyncio
 import httpx
 from datetime import datetime
 
-from .breeze_type_parsing import type_parsing, ReturnTypeParsers
+from .breeze_type_parsing import type_parsing, ReturnTypeParsers, JSONSerial
 from .account_log_actions import AccountLogActions
 
 from .utils import make_enum
