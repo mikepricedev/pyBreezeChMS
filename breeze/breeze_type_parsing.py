@@ -612,8 +612,14 @@ class ReturnTypeParsers(object):
                 if isinstance(value, str):
                     if action == AccountLogActions.tag_unassign.name or action == AccountLogActions.tag_assign.name:
                         value = self._loads_double_stringified_(value)
-                    else:
-                        value = json.loads(value)
+                    elif value:
+                        # Attempt to load JSON
+                        try:
+                            value = json.loads(value)
+
+                        except Exception as e:
+                            logging.warning(
+                                msg=f"Breeze log.object_json json parsing error.  {str(e)}")
 
                 return self._unknown_value_formatter_(key="_",
                                                       value=value)
