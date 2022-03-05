@@ -212,7 +212,7 @@ class BreezeApi(object):
             if attempts < self.retries:
                 attempts = attempts + 1
                 logging.warning(
-                    f"Read Timeout Error: {str(error)}.  Retry attempt number {attempts} of {self.retries}.")
+                    f"Read Timeout Error: {url}.  Retry attempt number {attempts} of {self.retries}.")
                 # sleep for 100 ms for each retry for a max of 1000ms
                 await asyncio.sleep(min((attempts/10), 1))
                 return await self._request(endpoint=endpoint,
