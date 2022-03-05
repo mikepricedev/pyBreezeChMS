@@ -17,12 +17,15 @@ Usage:
 
 __author__ = 'alexortizrosado@gmail.com (Alex Ortiz-Rosado)'
 
+import imp
+import json
 import os
 import logging
 from typing import List, Literal, Union
 import asyncio
 import httpx
 from datetime import datetime
+import re
 
 from .breeze_type_parsing import type_parsing, ReturnTypeParsers, JSONSerial
 from .account_log_actions import AccountLogActions
@@ -42,7 +45,6 @@ ENDPOINTS = make_enum(
     PLEDGES='/api/pledges',
     TAGS='/api/tags',
     BREEZE_ACCOUNT='/api/account')
-
 
 DATE_TIME_FORMAT_STRINGS = type_parsing.DATE_TIME_FORMAT_STRINGS
 
@@ -245,16 +247,39 @@ class BreezeApi(object):
     # read
     async def list_people(self,
                           details: bool = False,
-                          # filter_json=None,
+                          has_tags: List[Id] = None,
+                          does_not_have_tags: List[Id] = None,
+                          archived: bool = False,
                           limit: int = None,
-                          offset: int = None):
+                          offset: int = None,
+                          **filter):
         """List people from your database.
         Args:
             details: Option to return all information(slower) or just names.
-            filter_json: Option to filter through results based on criteria(tags, status, etc). Refer to profile field response to know values to search for or if you're hard-coding the field ids, watch the URL bar when filtering for people within Breeze's people filter page and use the variables you see listed.
+                filter_json: Option to filter through results based on criteria
+                (tags, status, etc). Refer to profile field response to know 
+                values to search for or if you're hard-coding the field ids, 
+                watch the URL bar when filtering for people within Breeze's 
+                people filter page and use the variables you see listed.
+
+            has_tags: Include people with these tags.
+
+            does_not_have_tags: Include people without these tags.
+
+            archived:  When 'True' return people who are archived.
+
+            filter: Refer to the URL bar when filtering for people within 
+            Breeze's people filter page and use the 'key=value&...' you see 
+            listed.  When a filter key begins with a number you may add leading 
+            underscore to the filter key to create a valid python variable 
+            name.  Warning: 'has_tags', 'does_not_have_tags', and 'archived' 
+            will override corresponding filters.
+
             limit: Number of people to return. If None, will return all people.
+
             offset: Number of people to skip before beginning to return results.
-                    Can be used in conjunction with limit for pagination.
+                Can be used in conjunction with limit for pagination.
+
         returns:
           JSON response. For example:
           {
@@ -274,12 +299,38 @@ class BreezeApi(object):
           }"""
 
         params = []
-        # if filter_json:
-        #     params.append('filter_json=%s' % json)
+
+        if len(filter):
+            for key in list(filter.keys()):
+                if bool(re.match(r'^_[0-9]+', key)):
+                    filter[key[1:]] = filter.pop(key)
+
         if limit:
             params.append(f"limit={limit}")
         if offset:
             params.append(f"offset={offset}")
+
+        if has_tags:
+            filter["tag_contains"] = '-'.join(
+                map(
+                    lambda tag_id: f'y_{tag_id}',
+                    has_tags
+                )
+            )
+
+        if does_not_have_tags:
+            filter["tag_does_not_contain"] = '-'.join(
+                map(
+                    lambda tag_id: f'n_{tag_id}',
+                    does_not_have_tags
+                )
+            )
+
+        if archived:
+            filter["archived"] = "yes"
+
+        if len(filter):
+            params.append(f'filter_json={json.dumps(filter)}')
 
         if details:
             params.append('details=1')

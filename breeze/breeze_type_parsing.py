@@ -98,6 +98,19 @@ class type_parsing:
         else:
             return float_str
 
+    # objects
+    @staticmethod
+    def object_list(obj):
+        """Detects and converts dicts that represent lists into proper lists."""
+        if not isinstance(obj, dict):
+            return obj
+
+        for i in range(len(obj)):
+            if not (i in obj or str(i) in obj):
+                return obj
+
+        return list(obj.values())
+
 
 class ReturnTypeParsers(object):
 
@@ -313,9 +326,15 @@ class ReturnTypeParsers(object):
                                             parsing_ids=parsing_ids),
                 person
             ))
-        else:
-            return self._person(person=person,
-                                parsing_ids=parsing_ids),
+        elif "search_fields" in person:
+            copy_of_person = person.copy()
+            copy_of_person.pop("search_fields")
+            result = type_parsing.object_list(copy_of_person)
+            if isinstance(result, list):
+                return self.person(person=result, profile_fields=profile_fields)
+
+        return self._person(person=person,
+                            parsing_ids=parsing_ids),
 
     def profile_field_option(self, option: dict) -> dict:
         return self._parse_types_(to_parse=option)
