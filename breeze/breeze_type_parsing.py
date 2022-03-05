@@ -578,6 +578,10 @@ class ReturnTypeParsers(object):
         # tags
         elif AccountLogActions.tag_unassign.name == action or AccountLogActions.tag_assign.name == action:
             details = self._loads_double_stringified_(details)
+            if isinstance(details, dict):
+                details = list(details.values())
+
+            details = [tag_id for tag_id in details if tag_id != ""]
 
         elif not (isinstance(details, dict) or isinstance(details, list)):
             return details
