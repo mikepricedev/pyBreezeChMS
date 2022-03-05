@@ -174,6 +174,7 @@ class ReturnTypeParsers(object):
                 value = self._known_types_formatter_(key=key, value=value)
 
                 to_parse[key] = value
+
             return to_parse
 
         return self._known_types_formatter_(key="_", value=to_parse)
@@ -334,7 +335,7 @@ class ReturnTypeParsers(object):
                 return self.person(person=result, profile_fields=profile_fields)
 
         return self._person(person=person,
-                            parsing_ids=parsing_ids),
+                            parsing_ids=parsing_ids)
 
     def profile_field_option(self, option: dict) -> dict:
         return self._parse_types_(to_parse=option)

@@ -244,36 +244,106 @@ class BreezeApi(object):
 
             return not (('errors' in response) or ('errorCode' in response))
 
-    # read
+    async def _list_people(self,
+                           details: bool = False,
+                           has_tags: List[Id] = None,
+                           does_not_have_tags: List[Id] = None,
+                           archived: bool = False,
+                           limit: int = None,
+                           offset: int = 0,
+                           **filter):
+
+        params = []
+
+        if len(filter):
+            for key in list(filter.keys()):
+                if bool(re.match(r'^_[0-9]+', key)):
+                    filter[key[1:]] = filter.pop(key)
+
+        if limit:
+            params.append(f"limit={limit}")
+        if offset or offset == 0:
+            params.append(f"offset={max(offset,0)}")
+
+        if has_tags:
+            filter["tag_contains"] = '-'.join(
+                map(
+                    lambda tag_id: f'y_{tag_id}',
+                    has_tags
+                )
+            )
+
+        if does_not_have_tags:
+            filter["tag_does_not_contain"] = '-'.join(
+                map(
+                    lambda tag_id: f'n_{tag_id}',
+                    does_not_have_tags
+                )
+            )
+
+        if archived:
+            filter["archived"] = "yes"
+
+        if len(filter):
+            params.append(f'filter_json={json.dumps(filter)}')
+
+        if details:
+
+            # Bug breeze will not return details on list if archived
+            if archived:
+
+                (people, profile_fields) = await asyncio.gather(
+                    self._request(
+                        f"{ENDPOINTS.PEOPLE}/?{'&'.join(params)}"),
+                    self.list_profile_fields()
+                )
+
+                if not people:
+                    return []
+
+                results = []
+                promises = []
+                for person in people:
+                    person_id = type_parsing.id(id=person.get("id"))
+
+                    promises.append(self._show_person(
+                        person_id=person_id, details_or_profile_fields=profile_fields))
+
+                    if len(promises) > 100:
+                        results.extend(await asyncio.gather(*promises))
+                        promises.clear()
+
+                results.extend(await asyncio.gather(*promises))
+
+                return results
+
+            else:
+                params.append('details=1')
+                (people, profile_fields) = await asyncio.gather(
+                    self._request(
+                        f"{ENDPOINTS.PEOPLE}/?{'&'.join(params)}"),
+                    self.list_profile_fields()
+                )
+
+                if not people:
+                    return []
+
+                return self.return_type_parsers.person(person=people,
+                                                       profile_fields=profile_fields)
+
+        else:
+            params.append('details=0')
+            people = (await self._request(
+                f"{ENDPOINTS.PEOPLE}/?{'&'.join(params)}") or [])
+            return self.return_type_parsers.person(person=people)
+
     async def list_people(self,
                           details: bool = False,
-                          has_tags: List[Id] = None,
-                          does_not_have_tags: List[Id] = None,
-                          archived: bool = False,
                           limit: int = None,
-                          offset: int = None,
-                          **filter):
+                          offset: int = 0):
         """List people from your database.
         Args:
             details: Option to return all information(slower) or just names.
-                filter_json: Option to filter through results based on criteria
-                (tags, status, etc). Refer to profile field response to know 
-                values to search for or if you're hard-coding the field ids, 
-                watch the URL bar when filtering for people within Breeze's 
-                people filter page and use the variables you see listed.
-
-            has_tags: Include people with these tags.
-
-            does_not_have_tags: Include people without these tags.
-
-            archived:  When 'True' return people who are archived.
-
-            filter: Refer to the URL bar when filtering for people within 
-            Breeze's people filter page and use the 'key=value&...' you see 
-            listed.  When a filter key begins with a number you may add leading 
-            underscore to the filter key to create a valid python variable 
-            name.  Warning: 'has_tags', 'does_not_have_tags', and 'archived' 
-            will override corresponding filters.
 
             limit: Number of people to return. If None, will return all people.
 
@@ -300,39 +370,13 @@ class BreezeApi(object):
 
         params = []
 
-        if len(filter):
-            for key in list(filter.keys()):
-                if bool(re.match(r'^_[0-9]+', key)):
-                    filter[key[1:]] = filter.pop(key)
-
         if limit:
             params.append(f"limit={limit}")
-        if offset:
-            params.append(f"offset={offset}")
-
-        if has_tags:
-            filter["tag_contains"] = '-'.join(
-                map(
-                    lambda tag_id: f'y_{tag_id}',
-                    has_tags
-                )
-            )
-
-        if does_not_have_tags:
-            filter["tag_does_not_contain"] = '-'.join(
-                map(
-                    lambda tag_id: f'n_{tag_id}',
-                    does_not_have_tags
-                )
-            )
-
-        if archived:
-            filter["archived"] = "yes"
-
-        if len(filter):
-            params.append(f'filter_json={json.dumps(filter)}')
+        if offset or offset == 0:
+            params.append(f"offset={max(offset,0)}")
 
         if details:
+
             params.append('details=1')
             (people, profile_fields) = await asyncio.gather(
                 self._request(
@@ -352,6 +396,53 @@ class BreezeApi(object):
                 f"{ENDPOINTS.PEOPLE}/?{'&'.join(params)}") or [])
             return self.return_type_parsers.person(person=people)
 
+    async def list_people_by_filters(self,
+                                     details: bool = False,
+                                     has_tags: List[Id] = None,
+                                     does_not_have_tags: List[Id] = None,
+                                     archived: bool = False,
+                                     **filter):
+        """List people from your database by a filters.
+        Args:
+            details: Option to return all information(slower) or just names.
+
+            has_tags: Include people with these tags.
+
+            does_not_have_tags: Include people without these tags.
+
+            archived:  When 'True' return people who are archived.
+
+            filter: Refer to the URL bar when filtering for people within
+                Breeze's people filter page and use the 'key=value&...' you see
+                listed.  When a filter key begins with a number you may add leading
+                underscore to the filter key to create a valid python variable
+                name.  Warning: 'has_tags', 'does_not_have_tags', and 'archived'
+                will override corresponding filters.
+
+        returns:
+          JSON response. For example:
+          {
+            "id": "157857",
+            "first_name": "Thomas",
+            "last_name": "Anderson",
+            "path": "img\/profiles\/generic\/blue.jpg"
+          },
+          {
+            "id": "157859",
+            "first_name": "Kate",
+            "last_name": "Austen",
+            "path": "img\/profiles\/upload\/2498d7f78s.jpg"
+          },
+          {
+            ...
+          }"""
+
+        return await self._list_people(details=details,
+                                       has_tags=has_tags,
+                                       does_not_have_tags=does_not_have_tags,
+                                       archived=archived,
+                                       **filter)
+
     async def list_profile_fields(self):
         """List profile fields from your database.
 
@@ -362,31 +453,34 @@ class BreezeApi(object):
                 profile_field=profile_field),
             (await self._request(ENDPOINTS.PROFILE_FIELDS)) or []))
 
-    async def show_person(self, person_id: Id, details: bool = True):
-        """Retrieve the details for a specific person by their ID.
-
-        Args:
-          person_id: Unique id for a person in Breeze database.
-          details: Option to return all information(slower) or just names. True = get all information pertaining to person; False = only get id and name
-
-        Returns:
-          JSON response."""
+    async def _show_person(self,
+                           person_id: Id,
+                           details_or_profile_fields: Union[List[dict], bool]):
         params = []
-        if details:
+        if details_or_profile_fields:
             params.append("details=1")
 
-            (person, profile_fields) = await asyncio.gather(
-                self._request(
-                    f"{ENDPOINTS.PEOPLE}/{person_id}?{'&'.join(params)}"),
-                self.list_profile_fields()
-            )
+            async def get_results():
+                if details_or_profile_fields == True:
+                    return await asyncio.gather(
+                        self._request(
+                            f"{ENDPOINTS.PEOPLE}/{person_id}?{'&'.join(params)}"),
+                        self.list_profile_fields()
+                    )
+                else:
+                    person = await self._request(
+                        f"{ENDPOINTS.PEOPLE}/{person_id}?{'&'.join(params)}")
 
-            if not person:
+                    return (person, details_or_profile_fields)
+
+            (person, profile_fields) = await get_results()
+
+            if person:
+                return self.return_type_parsers.person(
+                    person=person,
+                    profile_fields=profile_fields)
+            else:
                 return None
-
-            return self.return_type_parsers.person(
-                person=person,
-                profile_fields=profile_fields)
 
         else:
             params.append("details=0")
@@ -397,6 +491,18 @@ class BreezeApi(object):
                 return None
 
             return self.return_type_parsers.person(person=person)
+
+    async def show_person(self, person_id: Id, details: bool = True):
+        """Retrieve the details for a specific person by their ID.
+
+        Args:
+          person_id: Unique id for a person in Breeze database.
+          details: Option to return all information(slower) or just names. True = get all information pertaining to person; False = only get id and name
+
+        Returns:
+          JSON response."""
+        return await self._show_person(person_id=person_id,
+                                       details_or_profile_fields=details)
 
     async def list_tags(self, folder_id: Id = None):
         """List of tags
