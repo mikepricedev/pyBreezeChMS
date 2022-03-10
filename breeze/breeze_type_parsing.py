@@ -2,18 +2,8 @@ import json
 import logging
 import re
 from typing import Any, List, Union, Callable, TypeVar
-from datetime import datetime, date
-from .account_log_actions import AccountLogActions
-
-
-class JSONSerial(json.JSONEncoder):
-    """Adds ISO date serialization for datetime and date objects."""
-
-    def default(self, obj):
-        if isinstance(obj, (datetime, date)):
-            return obj.isoformat()
-        else:
-            return json.JSONEncoder.default(self, obj)
+from datetime import datetime
+from .breeze_types import AccountLog, AccountSummery, FamilyMember, Form, FormEntry, FormEntryResponse, FormField, FormFieldOption, Fund, PersonDetails, Person, Contribution, ProfileField, ProfileFieldOption, ProfileFields, Tag, TagFolder, Volunteer, VolunteerRole, AccountLogActions
 
 
 class type_parsing:
@@ -21,8 +11,8 @@ class type_parsing:
     DATE_TIME_FORMAT_STR_PATTERNS = {
         "%Y-%m-%d %H:%M:%S": r"^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}$",
         "%Y-%m-%d": r"^\d{4}-\d{2}-\d{2}$",
-        "%d-%m-%Y": r"^\d{2}-\d{2}-\d{4}$",
-        "%m/%d/%Y": r"^\d{2}\/\d{2}\/\d{4}$"
+        "%d-%m-%Y": r"^\d{1,2}-\d{1,2}-\d{4}$",
+        "%m/%d/%Y": r"^\d{1,2}\/\d{1,2}\/\d{4}$"
     }
 
     DATE_TIME_FORMAT_STRINGS = {
@@ -179,7 +169,7 @@ class ReturnTypeParsers(object):
 
         return self._known_types_formatter_(key="_", value=to_parse)
 
-    def person_family(self, family_member: dict) -> dict:
+    def person_family(self, family_member: dict) -> FamilyMember:
 
         def family_parser(key: str, value):
             # details
@@ -260,7 +250,7 @@ class ReturnTypeParsers(object):
             "address_field_ids": address_field_ids
         }
 
-    def person_details(self, details: dict, parsing_ids: dict) -> dict:
+    def person_details(self, details: dict, parsing_ids: dict) -> PersonDetails:
 
         def detail_formatter(key: str, value):
             if key in parsing_ids.get("email_field_ids"):
@@ -297,9 +287,13 @@ class ReturnTypeParsers(object):
         details = self._parse_types_(
             to_parse=details, custom_type_parser=detail_formatter)
 
-        return details
+        # convert detail keys to ints
+        int_key_details: PersonDetails = dict()
+        for key, item in details.items():
+            int_key_details[type_parsing.str_to_int(key)] = item
+        return int_key_details
 
-    def _person(self, person: dict, parsing_ids: dict) -> dict:
+    def _person(self, person: dict, parsing_ids: dict) -> Person:
 
         def person_formatter(key: str, value):
             if key == "family" and value and isinstance(value, list):
@@ -316,7 +310,7 @@ class ReturnTypeParsers(object):
 
         return person
 
-    def person(self, person: Union[dict, list], profile_fields: List[dict] = []) -> Union[dict, list]:
+    def person(self, person: Union[dict, list], profile_fields: List[dict] = []) -> Union[Person, List[Person]]:
 
         parsing_ids = self._profile_fields_parsering_ids_lookup(
             profile_fields=profile_fields)
@@ -337,10 +331,10 @@ class ReturnTypeParsers(object):
         return self._person(person=person,
                             parsing_ids=parsing_ids)
 
-    def profile_field_option(self, option: dict) -> dict:
+    def profile_field_option(self, option: dict) -> ProfileFieldOption:
         return self._parse_types_(to_parse=option)
 
-    def profile_sub_field(self, sub_field: dict) -> dict:
+    def profile_sub_field(self, sub_field: dict) -> ProfileField:
 
         def sub_field_parser(key: str, value):
             if "options" == key:
@@ -356,7 +350,7 @@ class ReturnTypeParsers(object):
         return self._parse_types_(to_parse=sub_field,
                                   custom_type_parser=sub_field_parser)
 
-    def profile_field(self, profile_field: dict) -> dict:
+    def profile_field(self, profile_field: dict) -> ProfileFields:
 
         def field_parser(key: str, value):
             if "fields" == key:
@@ -372,10 +366,10 @@ class ReturnTypeParsers(object):
         return self._parse_types_(to_parse=profile_field,
                                   custom_type_parser=field_parser)
 
-    def tag(self, tag: dict) -> dict:
+    def tag(self, tag: dict) -> Tag:
         return self._parse_types_(to_parse=tag)
 
-    def tag_folder(self, tag_folder: dict) -> dict:
+    def tag_folder(self, tag_folder: dict) -> TagFolder:
         return self._parse_types_(to_parse=tag_folder)
 
     def event_details(self, event_details: dict) -> dict:
@@ -457,7 +451,7 @@ class ReturnTypeParsers(object):
         attendee = self._parse_types_(to_parse=attendee)
         return attendee
 
-    def fund(self, fund: dict) -> dict:
+    def fund(self, fund: dict) -> Fund:
 
         def fund_parser(key: str, value):
             if "tax_deductible" == key:
@@ -473,7 +467,7 @@ class ReturnTypeParsers(object):
 
         return self._parse_types_(to_parse=fund, custom_type_parser=fund_parser)
 
-    def contribution(self, contribution: dict) -> dict:
+    def contribution(self, contribution: dict) -> Contribution:
 
         def contribution_parser(key: str, value):
 
@@ -501,7 +495,7 @@ class ReturnTypeParsers(object):
     def pledge(self, pledge: dict) -> dict:
         return self._parse_types_(to_parse=pledge)
 
-    def form(self, form: dict) -> dict:
+    def form(self, form: dict) -> Form:
         def form_parser(key: str, value):
             # bool
             if "is_archived" == key:
@@ -511,10 +505,10 @@ class ReturnTypeParsers(object):
 
         return self._parse_types_(to_parse=form, custom_type_parser=form_parser)
 
-    def form_field_option(self, option: dict) -> dict:
+    def form_field_option(self, option: dict) -> FormFieldOption:
         return self._parse_types_(to_parse=option)
 
-    def form_field(self, form_field: dict) -> dict:
+    def form_field(self, form_field: dict) -> FormField:
         def field_parser(key: str, value):
             # options
             if "options" == key:
@@ -529,15 +523,21 @@ class ReturnTypeParsers(object):
         return self._parse_types_(to_parse=form_field,
                                   custom_type_parser=field_parser)
 
-    def form_entry_response(self, response: dict) -> dict:
+    def form_entry_response(self, response: dict) -> FormEntryResponse:
 
         def entry_response_parser(key: str, value):
             return self._unknown_value_formatter_(key=key, value=value)
 
-        return self._parse_types_(to_parse=response,
-                                  custom_type_parser=entry_response_parser)
+        response = self._parse_types_(to_parse=response,
+                                      custom_type_parser=entry_response_parser)
 
-    def form_entry(self, entry: dict) -> dict:
+        # convert response keys to ints
+        int_key_response: PersonDetails = dict()
+        for key, item in response.items():
+            int_key_response[type_parsing.str_to_int(key)] = item
+        return int_key_response
+
+    def form_entry(self, entry: dict) -> FormEntry:
         def entry_parser(key: str, value):
             if "response" == key:
                 return self.form_entry_response(value)
@@ -546,25 +546,25 @@ class ReturnTypeParsers(object):
         return self._parse_types_(to_parse=entry,
                                   custom_type_parser=entry_parser)
 
-    def volunteer_role(self, role: dict) -> dict:
+    def volunteer_role(self, role: dict) -> VolunteerRole:
         # known formats
         role = self._parse_types_(to_parse=role)
 
         return role
 
-    def volunteer(self, volunteer: dict) -> dict:
+    def volunteer(self, volunteer: dict) -> Volunteer:
         # known formats
         volunteer = self._parse_types_(to_parse=volunteer)
         return volunteer
 
-    def breeze_account(self, account: dict) -> dict:
+    def breeze_account(self, account: dict) -> AccountSummery:
         def account_parser(key: str, value):
             return self._unknown_value_formatter_(key=key, value=value)
 
         return self._parse_types_(to_parse=account,
                                   custom_type_parser=account_parser)
 
-    def breeze_account_log_details(self, details, action: str):
+    def breeze_account_log_details(self, details, action: AccountLogActions):
 
         if not details:
             return details
@@ -577,7 +577,7 @@ class ReturnTypeParsers(object):
         if not details:
             return details
         # tags
-        elif AccountLogActions.tag_unassign.name == action or AccountLogActions.tag_assign.name == action:
+        elif AccountLogActions.tag_unassign == action or AccountLogActions.tag_assign == action:
             details = self._loads_double_stringified_(details)
             if isinstance(details, dict):
                 details = list(details.values())
@@ -588,7 +588,7 @@ class ReturnTypeParsers(object):
             return details
 
         # Contributions
-        elif AccountLogActions.contribution_updated.name == action:
+        elif AccountLogActions.contribution_updated == action:
             if isinstance(details, list):
                 return list(map(
                     lambda contribution: self.contribution(
@@ -598,10 +598,10 @@ class ReturnTypeParsers(object):
             elif isinstance(details, dict):
                 return self.contribution(
                     contribution=details)
-        elif AccountLogActions.contribution_deleted.name == action:
+        elif AccountLogActions.contribution_deleted == action:
             return self.contribution(
                 contribution=details)
-        elif AccountLogActions.batch_deleted.name == action:
+        elif AccountLogActions.batch_deleted == action:
             def batch_deleted_parser(key: str, value):
                 if "payments" == key:
                     return list(map(
@@ -616,7 +616,7 @@ class ReturnTypeParsers(object):
                                       custom_type_parser=batch_deleted_parser)
 
         # Events
-        elif AccountLogActions.event_created.name == action or AccountLogActions.event_updated.name == action:
+        elif AccountLogActions.event_created == action or AccountLogActions.event_updated == action:
             def event_created_parser(key: str, value):
                 if key == "details_json":
                     try:
@@ -638,19 +638,18 @@ class ReturnTypeParsers(object):
         return self._parse_types_(to_parse=details,
                                   custom_type_parser=unknown_parser)
 
-    def breeze_account_log(self, account_log: dict) -> dict:
-        action = account_log.get("action", None)
+    def breeze_account_log(self, account_log: dict) -> AccountLog:
+        action = AccountLogActions[account_log.get("action")]
 
         def log_parser(key: str, value):
             if "object_json" == key:
                 if isinstance(value, str):
-                    if action == AccountLogActions.tag_unassign.name or action == AccountLogActions.tag_assign.name:
+                    if action == AccountLogActions.tag_unassign or action == AccountLogActions.tag_assign:
                         value = self._loads_double_stringified_(value)
                     elif value:
                         # Attempt to load JSON
                         try:
                             value = json.loads(value)
-
                         except Exception as e:
                             logging.warning(
                                 msg=f"Breeze log.object_json json parsing error.  {str(e)}")
@@ -664,5 +663,9 @@ class ReturnTypeParsers(object):
 
             return self._unknown_value_formatter_(key=key, value=value)
 
-        return self._parse_types_(to_parse=account_log,
-                                  custom_type_parser=log_parser)
+        account_log = self._parse_types_(to_parse=account_log,
+                                         custom_type_parser=log_parser)
+
+        account_log["action"] = action
+
+        return account_log

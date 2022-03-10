@@ -1,25 +1,23 @@
-# Taken from https://raw.githubusercontent.com/ozgur/python-linkedin/master/linkedin/utils.py
+from datetime import date, datetime
+import json
+from typing import Union
+from .breeze_types import AccountLogActions
 
 
-def make_enum(enum_type='enum', base_classes=None, methods=None, **attrs):
-    """
-    Generates a enumeration with the given attributes.
-    """
-    # Enumerations can not be initalized as a new instance
-    def __init__(instance, *args, **kwargs):
-        raise RuntimeError('%s types can not be initialized.' % enum_type)
+def datetime_to_date(date: Union[date, datetime]) -> date:
+    if isinstance(date, datetime):
+        return date.date()
+    else:
+        return date
 
-    if base_classes is None:
-        base_classes = ()
 
-    if methods is None:
-        methods = {}
+class JSONSerial(json.JSONEncoder):
+    """Adds ISO date serialization for datetime and date objects."""
 
-    base_classes = base_classes + (object,)
-    for k, v in methods.items():
-        methods[k] = classmethod(v)
-
-    attrs['enums'] = attrs.copy()
-    methods.update(attrs)
-    methods['__init__'] = __init__
-    return type(enum_type, base_classes, methods)
+    def default(self, obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        elif isinstance(obj, AccountLogActions):
+            return obj.name
+        else:
+            return json.JSONEncoder.default(self, obj)

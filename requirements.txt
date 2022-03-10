@@ -1,3 +1,4 @@
 coveralls
 httpx>=0.22.0
 pylint>=2.12
+StrEnum>=0.4.7

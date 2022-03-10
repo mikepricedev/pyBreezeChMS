@@ -17,36 +17,20 @@ Usage:
 
 __author__ = 'alexortizrosado@gmail.com (Alex Ortiz-Rosado)'
 
-import imp
 import json
+from multiprocessing import Event
 import os
 import logging
-from typing import List, Literal, Union
+from typing import Callable, Dict, List, Literal, Set, Union, AsyncGenerator
 import asyncio
 import httpx
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import re
 
-from .breeze_type_parsing import type_parsing, ReturnTypeParsers, JSONSerial
-from .account_log_actions import AccountLogActions
-
-from .utils import make_enum
-
-ENDPOINTS = make_enum(
-    'BreezeApiURL',
-    PEOPLE='/api/people',
-    EVENTS='/api/events',
-    PROFILE_FIELDS='/api/profile',
-    CONTRIBUTIONS='/api/giving',
-    ATTENDANCE='/api/events/attendance',
-    VOLUNTEERS='/api/volunteers',
-    FUNDS='/api/funds',
-    FORMS='/api/forms',
-    PLEDGES='/api/pledges',
-    TAGS='/api/tags',
-    BREEZE_ACCOUNT='/api/account')
-
-DATE_TIME_FORMAT_STRINGS = type_parsing.DATE_TIME_FORMAT_STRINGS
+from .breeze_type_parsing import type_parsing, ReturnTypeParsers
+from .breeze_endpoints import EndPoints
+from .utils import datetime_to_date, JSONSerial
+from .breeze_types import AccountLog, AccountSummery, Attendance, Calendar, Campaign, Contribution, Form, FormEntry, FormField, Fund, Id, Location, Person, Pledge, ProfileFields, AccountLogActions, Tag, TagFolder, Volunteer, VolunteerRole
 
 
 class BreezeError(Exception):
@@ -54,7 +38,8 @@ class BreezeError(Exception):
     pass
 
 
-Id = Union[int, str]
+MAX_EVENTS_LIMIT = 1000
+MAX_ACCOUNT_LOG_LIMIT = 3000
 
 
 class BreezeApi(object):
@@ -178,8 +163,9 @@ class BreezeApi(object):
             headers = {}
         headers.update({
             'Content-Type': 'application/json',
-            'Api-Key': self.breeze_api_key}
-        )
+            'Api-Key': self.breeze_api_key,
+            'Cache-Control': 'no-cache'
+        })
 
         if params is None:
             params = {}
@@ -251,7 +237,7 @@ class BreezeApi(object):
                            archived: bool = False,
                            limit: int = None,
                            offset: int = 0,
-                           **filter):
+                           **filter) -> List[Person]:
 
         params = []
 
@@ -294,7 +280,7 @@ class BreezeApi(object):
 
                 (people, profile_fields) = await asyncio.gather(
                     self._request(
-                        f"{ENDPOINTS.PEOPLE}/?{'&'.join(params)}"),
+                        f"{EndPoints.PEOPLE}/?{'&'.join(params)}"),
                     self.list_profile_fields()
                 )
 
@@ -306,8 +292,8 @@ class BreezeApi(object):
                 for person in people:
                     person_id = type_parsing.id(id=person.get("id"))
 
-                    promises.append(self._show_person(
-                        person_id=person_id, details_or_profile_fields=profile_fields))
+                    promises.append(self.show_person(
+                        person_id=person_id, details=profile_fields))
 
                     if len(promises) > 100:
                         results.extend(await asyncio.gather(*promises))
@@ -321,7 +307,7 @@ class BreezeApi(object):
                 params.append('details=1')
                 (people, profile_fields) = await asyncio.gather(
                     self._request(
-                        f"{ENDPOINTS.PEOPLE}/?{'&'.join(params)}"),
+                        f"{EndPoints.PEOPLE}/?{'&'.join(params)}"),
                     self.list_profile_fields()
                 )
 
@@ -334,13 +320,13 @@ class BreezeApi(object):
         else:
             params.append('details=0')
             people = (await self._request(
-                f"{ENDPOINTS.PEOPLE}/?{'&'.join(params)}") or [])
+                f"{EndPoints.PEOPLE}/?{'&'.join(params)}") or [])
             return self.return_type_parsers.person(person=people)
 
     async def list_people(self,
                           details: bool = False,
                           limit: int = None,
-                          offset: int = 0):
+                          offset: int = 0) -> List[Person]:
         """List people from your database.
         Args:
             details: Option to return all information(slower) or just names.
@@ -380,7 +366,7 @@ class BreezeApi(object):
             params.append('details=1')
             (people, profile_fields) = await asyncio.gather(
                 self._request(
-                    f"{ENDPOINTS.PEOPLE}/?{'&'.join(params)}"),
+                    f"{EndPoints.PEOPLE}/?{'&'.join(params)}"),
                 self.list_profile_fields()
             )
 
@@ -393,15 +379,42 @@ class BreezeApi(object):
         else:
             params.append('details=0')
             people = (await self._request(
-                f"{ENDPOINTS.PEOPLE}/?{'&'.join(params)}") or [])
+                f"{EndPoints.PEOPLE}/?{'&'.join(params)}") or [])
             return self.return_type_parsers.person(person=people)
+
+    async def yield_people(self,
+                           details: bool = False,
+                           batch_size: int = 500) -> AsyncGenerator[Person,
+                                                                    None]:
+        offset = 0
+        promise = self.list_people(
+            details=details,
+            limit=batch_size,
+            offset=offset
+        )
+
+        while promise:
+            people = await promise
+
+            if len(people) == batch_size:
+
+                promise = self._list_people(
+                    details=details,
+                    limit=batch_size,
+                    offset=(offset := offset + batch_size),
+                )
+            else:
+                promise = None
+
+            for person in people:
+                yield person
 
     async def list_people_by_filters(self,
                                      details: bool = False,
                                      has_tags: List[Id] = None,
                                      does_not_have_tags: List[Id] = None,
                                      archived: bool = False,
-                                     **filter):
+                                     **filter) -> List[Person]:
         """List people from your database by a filters.
         Args:
             details: Option to return all information(slower) or just names.
@@ -443,7 +456,7 @@ class BreezeApi(object):
                                        archived=archived,
                                        **filter)
 
-    async def list_profile_fields(self):
+    async def list_profile_fields(self) -> List[ProfileFields]:
         """List profile fields from your database.
 
         Returns:
@@ -451,27 +464,36 @@ class BreezeApi(object):
         return list(map(
             lambda profile_field: self.return_type_parsers.profile_field(
                 profile_field=profile_field),
-            (await self._request(ENDPOINTS.PROFILE_FIELDS)) or []))
+            (await self._request(EndPoints.PROFILE_FIELDS)) or []))
 
-    async def _show_person(self,
-                           person_id: Id,
-                           details_or_profile_fields: Union[List[dict], bool]):
+    async def show_person(self,
+                          person_id: Id,
+
+                          details: Union[ProfileFields, bool]) -> Person:
+        """Retrieve the details for a specific person by their ID.
+
+        Args:
+          person_id: Unique id for a person in Breeze database.
+          details: Option to return all information(slower) or just names. True = get all information pertaining to person; False = only get id and name
+
+        Returns:
+          JSON response."""
         params = []
-        if details_or_profile_fields:
+        if details:
             params.append("details=1")
 
             async def get_results():
-                if details_or_profile_fields == True:
+                if details == True:
                     return await asyncio.gather(
                         self._request(
-                            f"{ENDPOINTS.PEOPLE}/{person_id}?{'&'.join(params)}"),
+                            f"{EndPoints.PEOPLE}/{person_id}?{'&'.join(params)}"),
                         self.list_profile_fields()
                     )
                 else:
                     person = await self._request(
-                        f"{ENDPOINTS.PEOPLE}/{person_id}?{'&'.join(params)}")
+                        f"{EndPoints.PEOPLE}/{person_id}?{'&'.join(params)}")
 
-                    return (person, details_or_profile_fields)
+                    return (person, details)
 
             (person, profile_fields) = await get_results()
 
@@ -485,26 +507,14 @@ class BreezeApi(object):
         else:
             params.append("details=0")
 
-            person = await self._request(f"{ENDPOINTS.PEOPLE}/{person_id}?{'&'.join(params)}")
+            person = await self._request(f"{EndPoints.PEOPLE}/{person_id}?{'&'.join(params)}")
 
             if not person:
                 return None
 
             return self.return_type_parsers.person(person=person)
 
-    async def show_person(self, person_id: Id, details: bool = True):
-        """Retrieve the details for a specific person by their ID.
-
-        Args:
-          person_id: Unique id for a person in Breeze database.
-          details: Option to return all information(slower) or just names. True = get all information pertaining to person; False = only get id and name
-
-        Returns:
-          JSON response."""
-        return await self._show_person(person_id=person_id,
-                                       details_or_profile_fields=details)
-
-    async def list_tags(self, folder_id: Id = None):
+    async def list_tags(self, folder_id: Id = None) -> List[Tag]:
         """List of tags
 
         Args:
@@ -534,10 +544,10 @@ class BreezeApi(object):
 
         return list(map(
             lambda tag: self.return_type_parsers.tag(tag=tag),
-            (await self._request('%s/list_tags/?%s' % (ENDPOINTS.TAGS, '&'.join(params)))) or []
+            (await self._request('%s/list_tags/?%s' % (EndPoints.TAGS, '&'.join(params)))) or []
         ))
 
-    async def list_tag_folders(self):
+    async def list_tag_folders(self) -> List[TagFolder]:
         """List of tag folders
 
         Args: (none)
@@ -574,17 +584,17 @@ class BreezeApi(object):
         return list(map(
             lambda tag_folder: self.return_type_parsers.tag_folder(
                 tag_folder=tag_folder),
-            (await self._request("%s/list_folders" % ENDPOINTS.TAGS)) or []
+            (await self._request("%s/list_folders" % EndPoints.TAGS)) or []
         ))
 
     async def list_events(self,
-                          start_date: datetime = None,
-                          end_date: datetime = None,
+                          start_date: Union[datetime, date] = None,
+                          end_date: Union[datetime, date] = None,
                           category_id: Id = None,
                           eligible: bool = False,
                           details: bool = False,
                           limit: int = 500
-                          ):
+                          ) -> List[Event]:
         """Retrieve a list of events based on search criteria.
 
         Args:
@@ -597,6 +607,7 @@ class BreezeApi(object):
 
         Returns:
           JSON response."""
+        limit = min(limit, MAX_EVENTS_LIMIT)
         params = []
         if start_date:
             start_date = type_parsing.date_to_str(start_date, "YYYY-MM-DD")
@@ -611,18 +622,102 @@ class BreezeApi(object):
         if details:
             params.append("details=1")
         if limit or limit == 0:
-            params.append("limit={limit}")
+            params.append(f"limit={limit}")
 
         return list((map(
             lambda event: self.return_type_parsers.event(event=event),
-            (await self._request('%s/?%s' % (ENDPOINTS.EVENTS, '&'.join(params)))) or []
+            (await self._request('%s/?%s' % (EndPoints.EVENTS, '&'.join(params)))) or []
         )))
+
+    async def yield_events(self,
+                           from_date: Union[datetime, date] = date(
+                               year=1979, month=1, day=1),
+                           to_date: Union[datetime, date] = datetime.now(),
+                           category_id: Id = None,
+                           eligible: bool = False,
+                           details: bool = False,
+                           on_max_limit_overflow: Callable[[
+            date, List[Dict]], None] = None
+    ) -> AsyncGenerator[Event, None]:
+
+        EVENT_IDS: set[int] = set()
+
+        start_date = datetime_to_date(date=from_date)
+        to_date = datetime_to_date(date=to_date)
+
+        promise = self.list_events(
+            start_date=start_date,
+            end_date=to_date,
+            category_id=category_id,
+            eligible=eligible,
+            details=details,
+            limit=MAX_EVENTS_LIMIT
+        )
+
+        while promise:
+            events: List[Dict] = await promise
+
+            if len(events) < MAX_EVENTS_LIMIT:
+                promise = None
+            else:
+                event_dates: Set[date] = set()
+                for event in events:
+                    start_datetime = event.get("start_datetime", None)
+                    if start_datetime:
+                        event_dates.add(datetime_to_date(start_datetime))
+
+                last_date, *_ = sorted(event_dates, reverse=True) or [to_date]
+
+                # Filled batch size in one day
+                if len(event_dates) == 1:
+
+                    # Overflowed max limit on single day
+                    logging.exception(
+                        f"Single day events on {last_date.isoformat()} overflowed the max batch size of {MAX_EVENTS_LIMIT}.  Some events are likely unretrievable due to limitations the breeze api.")
+
+                    if on_max_limit_overflow:
+                        on_max_limit_overflow(last_date, events)
+
+                    if start_date < to_date:
+
+                        # Continue to next day
+                        promise = self.list_events(
+                            start_date=(start_date := start_date +
+                                        timedelta(days=1)),
+                            end_date=to_date,
+                            category_id=category_id,
+                            eligible=eligible,
+                            details=details,
+                            limit=MAX_EVENTS_LIMIT
+                        )
+                    else:
+                        promise = None
+
+                elif last_date <= to_date:
+
+                    promise = self.list_events(
+                        start_date=(start_date := last_date),
+                        end_date=to_date,
+                        category_id=category_id,
+                        eligible=eligible,
+                        details=details,
+                        limit=MAX_EVENTS_LIMIT
+                    )
+
+                else:
+                    promise = None
+
+            for event in events:
+                id = event.get("id", 0)
+                if id not in EVENT_IDS:
+                    EVENT_IDS.add(id)
+                    yield event
 
     async def show_event(self,
                          instance_id: Id,
                          eligible: bool = False,
                          details: bool = False
-                         ):
+                         ) -> Event:
         """Retrieve a list of events based on search criteria.
 
           Args:
@@ -640,7 +735,7 @@ class BreezeApi(object):
         if details:
             params.append("details=1")
 
-        event = (await self._request(f"{ENDPOINTS.EVENTS}/list_event?{'&'.join(params)}")) or None
+        event = (await self._request(f"{EndPoints.EVENTS}/list_event?{'&'.join(params)}")) or None
 
         if event == None:
             return event
@@ -683,28 +778,31 @@ class BreezeApi(object):
 
         return list((map(
             lambda event: self.return_type_parsers.event(event=event),
-            (await self._request(f"{ENDPOINTS.EVENTS}/list_event?{'&'.join(params)}")) or []
+            (await self._request(f"{EndPoints.EVENTS}/list_event?{'&'.join(params)}")) or []
         )))
 
-    async def list_calendars(self):
+    async def list_calendars(self) -> Calendar:
         """Retrieve a list of Calendars.
         """
         return list(map(
             lambda calendar: self.return_type_parsers.calendar(
                 calendar=calendar),
-            (await self._request(f"{ENDPOINTS.EVENTS}/calendars/list")) or []
+            (await self._request(f"{EndPoints.EVENTS}/calendars/list")) or []
         ))
 
-    async def list_locations(self):
+    async def list_locations(self) -> Location:
         """Retrieve a list of Locations.
         """
         return list(map(
             lambda location: self.return_type_parsers.location(
                 location=location),
-            (await self._request(f"{ENDPOINTS.EVENTS}/locations")) or []
+            (await self._request(f"{EndPoints.EVENTS}/locations")) or []
         ))
 
-    async def list_attendance(self, instance_id: Id, details: bool = False, type="person"):
+    async def list_attendance(self,
+                              instance_id: Id,
+                              details: bool = False,
+                              type="person") -> List[Attendance]:
         """Retrieve a list of attendees for a given event instance_id.
 
           Args:
@@ -724,7 +822,7 @@ class BreezeApi(object):
         return list(map(
             lambda attendee: self.return_type_parsers.attendee(
                 attendee=attendee),
-            (await self._request(f"{ENDPOINTS.ATTENDANCE}/list/?{'&'.join(params)}")) or []
+            (await self._request(f"{EndPoints.ATTENDANCE}/list/?{'&'.join(params)}")) or []
         ))
 
     async def list_eligible_people(self, instance_id: Id):
@@ -741,12 +839,13 @@ class BreezeApi(object):
         return list(map(
             lambda person: self.return_type_parsers.person(person=person),
             ((await self._request('%s/eligible?%s' %
-                                  (ENDPOINTS.ATTENDANCE, '&'.join(params)), timeout=180)) or [])
+                                  (EndPoints.ATTENDANCE, '&'.join(params)), timeout=180)) or [])
         ))
 
     async def list_contributions(self,
-                                 start_date: datetime = None,
-                                 end_date: datetime = None,
+                                 start_date: Union[datetime, date] = date(
+                                     year=1979, month=1, day=1),
+                                 end_date: Union[datetime, date] = None,
                                  person_id: Id = None,
                                  include_family: bool = False,
                                  amount_min: Union[int, float] = None,
@@ -756,7 +855,7 @@ class BreezeApi(object):
                                  envelope_number: Union[int, str] = None,
                                  batches: Union[int, str] = None,
                                  forms_ids: List[Id] = None,
-                                 pledge_ids: List[Id] = None):
+                                 pledge_ids: List[Id] = None) -> List[Contribution]:
         """Retrieve a list of contributions.
 
         Args:
@@ -821,11 +920,77 @@ class BreezeApi(object):
         return list(map(
             lambda contribution: self.return_type_parsers.contribution(
                 contribution=contribution),
-            (await self._request('%s/list?%s' % (ENDPOINTS.CONTRIBUTIONS,
+            (await self._request('%s/list?%s' % (EndPoints.CONTRIBUTIONS,
                                                  '&'.join(params)))) or []
         ))
 
-    async def list_funds(self, include_totals: bool = False):
+    async def yield_contributions(self,
+                                  from_date: Union[datetime, date] = date(
+                                      year=1979, month=1, day=1),
+                                  to_date: Union[datetime,
+                                                 date] = datetime.now(),
+                                  person_id: Id = None,
+                                  include_family: bool = False,
+                                  amount_min: Union[int, float] = None,
+                                  amount_max: Union[int, float] = None,
+                                  method_ids: List[Id] = None,
+                                  fund_ids: List[Id] = None,
+                                  envelope_number: Union[int, str] = None,
+                                  batches: Union[int, str] = None,
+                                  forms_ids: List[Id] = None,
+                                  pledge_ids: List[Id] = None,
+                                  step_size: int = 356) -> AsyncGenerator[Contribution, None]:
+        start_date = datetime_to_date(from_date)
+        to_date = datetime_to_date(to_date)
+        end_date = min(start_date + timedelta(days=step_size), to_date)
+
+        promise = self.list_contributions(
+            start_date=start_date,
+            end_date=end_date,
+            person_id=person_id,
+            include_family=include_family,
+            amount_min=amount_min,
+            amount_max=amount_max,
+            method_ids=method_ids,
+            fund_ids=fund_ids,
+            envelope_number=envelope_number,
+            batches=batches,
+            forms_ids=forms_ids,
+            pledge_ids=pledge_ids
+        )
+
+        while promise:
+            contribs = await promise
+
+            if end_date < to_date:
+
+                start_date = end_date + timedelta(days=1)
+
+                end_date = min(
+                    start_date + timedelta(days=step_size), to_date)
+
+                promise = self.list_contributions(
+                    start_date=start_date,
+                    end_date=end_date,
+                    person_id=person_id,
+                    include_family=include_family,
+                    amount_min=amount_min,
+                    amount_max=amount_max,
+                    method_ids=method_ids,
+                    fund_ids=fund_ids,
+                    envelope_number=envelope_number,
+                    batches=batches,
+                    forms_ids=forms_ids,
+                    pledge_ids=pledge_ids
+                )
+
+            else:
+                promise = None
+
+            for contrib in contribs:
+                yield contrib
+
+    async def list_funds(self, include_totals: bool = False) -> List[Fund]:
         """List all funds.
 
         Args:
@@ -841,10 +1006,10 @@ class BreezeApi(object):
         return list(map(
             lambda fund: self.return_type_parsers.fund(fund=fund),
             (await self._request('%s/list?%s' %
-                                 (ENDPOINTS.FUNDS, '&'.join(params)))) or []
+                                 (EndPoints.FUNDS, '&'.join(params)))) or []
         ))
 
-    async def list_campaigns(self):
+    async def list_campaigns(self) -> List[Campaign]:
         """List of campaigns.
 
         Returns:
@@ -853,10 +1018,10 @@ class BreezeApi(object):
         return list(map(
             lambda campaign: self.return_type_parsers.campaign(
                 campaign=campaign),
-            (await self._request('%s/list_campaigns' % (ENDPOINTS.PLEDGES))) or []
+            (await self._request('%s/list_campaigns' % (EndPoints.PLEDGES))) or []
         ))
 
-    async def list_pledges(self, campaign_id: Id):
+    async def list_pledges(self, campaign_id: Id) -> List[Pledge]:
         """List of pledges within a campaign.
 
         Args:
@@ -869,11 +1034,11 @@ class BreezeApi(object):
             lambda pledge: self.return_type_parsers.pledge(
                 pledge=pledge),
             (await self._request('%s/list_pledges?campaign_id=%s' % (
-                ENDPOINTS.PLEDGES, campaign_id
+                EndPoints.PLEDGES, campaign_id
             ))) or []
         ))
 
-    async def list_forms(self, is_archived: bool = False):
+    async def list_forms(self, is_archived: bool = False) -> List[Form]:
         """List all forms.
 
         Args:
@@ -889,10 +1054,10 @@ class BreezeApi(object):
         return list(map(
             lambda form: self.return_type_parsers.form(form=form),
             (await self._request('%s/list_forms?%s' %
-                                 (ENDPOINTS.FORMS, '&'.join(params)))) or []
+                                 (EndPoints.FORMS, '&'.join(params)))) or []
         ))
 
-    async def list_form_fields(self, form_id: Id):
+    async def list_form_fields(self, form_id: Id) -> List[FormField]:
         """List the fields for a given form.
 
         Args:
@@ -907,10 +1072,10 @@ class BreezeApi(object):
             lambda form_field: self.return_type_parsers.form_field(
                 form_field=form_field),
             (await self._request('%s/list_form_fields?%s' %
-                                 (ENDPOINTS.FORMS, '&'.join(params)))) or []
+                                 (EndPoints.FORMS, '&'.join(params)))) or []
         ))
 
-    async def list_form_entries(self, form_id: Id, details: bool = True):
+    async def list_form_entries(self, form_id: Id, details: bool = True) -> List[FormEntry]:
         """List all forms entries.
 
         Args:
@@ -930,10 +1095,10 @@ class BreezeApi(object):
                 entry=entry),
             (await self._request(
                 '%s/list_form_entries?%s' %
-                (ENDPOINTS.FORMS, '&'.join(params)))) or []
+                (EndPoints.FORMS, '&'.join(params)))) or []
         ))
 
-    async def list_volunteers(self, instance_id: Id):
+    async def list_volunteers(self, instance_id: Id) -> List[Volunteer]:
         """List volunteers from a specific event.
 
           Args:
@@ -948,11 +1113,12 @@ class BreezeApi(object):
             lambda volunteer: self.return_type_parsers.volunteer(
                 volunteer=volunteer),
             (await self._request('%s/list?%s' %
-                                 (ENDPOINTS.VOLUNTEERS, '&'.join(params)))) or []
+                                 (EndPoints.VOLUNTEERS, '&'.join(params)))) or []
         ))
 
-    async def list_volunteer_roles(self, instance_id: Id,
-                                   show_quantity: bool = True):
+    async def list_volunteer_roles(self,
+                                   instance_id: Id,
+                                   show_quantity: bool = True) -> List[VolunteerRole]:
         """List volunteers from a specific event.
 
           Args:
@@ -969,10 +1135,10 @@ class BreezeApi(object):
         return list(map(
             lambda role: self.return_type_parsers.volunteer_role(role=role),
             (await self._request('%s/list_roles?%s' %
-                                 (ENDPOINTS.VOLUNTEERS, '&'.join(params)))) or []
+                                 (EndPoints.VOLUNTEERS, '&'.join(params)))) or []
         ))
 
-    async def get_account_summary(self):
+    async def get_account_summary(self) -> AccountSummery:
         """Retrieve the details for a specific account using the API key
           and URL. It can also work to see if the key and URL are valid.
 
@@ -1000,7 +1166,7 @@ class BreezeApi(object):
           }
           """
 
-        account = await self._request(f"{ENDPOINTS.BREEZE_ACCOUNT}/summary")
+        account = await self._request(f"{EndPoints.BREEZE_ACCOUNT}/summary")
 
         if not account:
             return None
@@ -1008,11 +1174,12 @@ class BreezeApi(object):
         return self.return_type_parsers.breeze_account(account=account)
 
     async def get_account_log(self,
-                              action: AccountLogActions, start_date: datetime = None,
-                              end_date: datetime = None,
+                              action: AccountLogActions,
+                              start_date: Union[datetime, date] = None,
+                              end_date: Union[datetime, date] = None,
                               user_id: Id = None,
                               details: bool = False,
-                              limit: int = 500):
+                              limit: int = 500) -> List[AccountLog]:
         """Retrieve a list of events based on search criteria.
 
         Args:
@@ -1048,10 +1215,90 @@ class BreezeApi(object):
         return list(map(
             lambda account_log: self.return_type_parsers.breeze_account_log(
                 account_log=account_log),
-            (await self._request(f"{ENDPOINTS.BREEZE_ACCOUNT}/list_log?{'&'.join(params)}", timeout=180)) or []
+            (await self._request(f"{EndPoints.BREEZE_ACCOUNT}/list_log?{'&'.join(params)}", timeout=180)) or []
         ))
 
-    # write, update, delete
+    async def yield_account_log(self,
+                                action: AccountLogActions,
+                                from_date: Union[date, datetime] = date(
+                                    year=1979, month=1, day=1),
+                                to_date: Union[date,
+                                               datetime] = datetime.now(),
+                                user_id: Id = None,
+                                details: bool = False,
+                                on_max_limit_overflow: Callable[[
+            date, List[Dict]], None] = None
+    ) -> AsyncGenerator[AccountLog, None]:
+        LOG_IDS: set[int] = set()
+        end_date = datetime_to_date(date=to_date)
+        from_date = datetime_to_date(date=from_date)
+
+        promise = self.get_account_log(
+            action=action,
+            start_date=from_date,
+            end_date=end_date,
+            user_id=user_id,
+            details=details,
+            limit=MAX_ACCOUNT_LOG_LIMIT
+        )
+
+        while promise:
+
+            logs: List[Dict] = await promise
+
+            if len(logs) < MAX_ACCOUNT_LOG_LIMIT:
+                promise = None
+            else:
+
+                log_dates: Set[date] = set()
+                for log in logs:
+                    created_on = log.get("created_on", None)
+                    if created_on:
+                        log_dates.add(datetime_to_date(created_on))
+
+                first_date, *_ = sorted(log_dates) or [from_date]
+
+                if len(log_dates) == 1:
+                    # Overflowed max limit on single day
+                    logging.exception(
+                        f'Single day "{action.name}" logs on {first_date.isoformat()} overflowed the max batch size of {MAX_ACCOUNT_LOG_LIMIT}.  Some logs are likely unretrievable due to limitations the breeze api.')
+
+                    if on_max_limit_overflow:
+                        on_max_limit_overflow(first_date, logs)
+
+                    if first_date > from_date:
+                        # Continue skip overflowed day and continue
+                        promise = self.get_account_log(
+                            action=action,
+                            start_date=from_date,
+                            end_date=(end_date := first_date -
+                                      timedelta(days=1)),
+                            user_id=user_id,
+                            details=details,
+                            limit=MAX_ACCOUNT_LOG_LIMIT
+                        )
+                    else:
+                        promise = None
+
+                elif first_date >= from_date:
+
+                    promise = self.get_account_log(
+                        action=action,
+                        start_date=from_date,
+                        end_date=(end_date := first_date),
+                        user_id=user_id,
+                        details=details,
+                        limit=MAX_ACCOUNT_LOG_LIMIT
+                    )
+
+                else:
+                    promise = None
+
+            for log in logs:
+                id = log.get("id", 0)
+                if id not in LOG_IDS:
+                    LOG_IDS.add(id)
+                    yield log
 
     def add_person(self, first_name, last_name, fields_json=None):
         """Adds a new person into the database.
@@ -1083,7 +1330,7 @@ class BreezeApi(object):
         if fields_json:
             params.append('fields_json=%s' % fields_json)
 
-        return self._request('%s/add?%s' % (ENDPOINTS.PEOPLE, '&'.join(params)))
+        return self._request('%s/add?%s' % (EndPoints.PEOPLE, '&'.join(params)))
 
     def update_person(self, person_id, fields_json):
         """Updates the details for a specific person in the database.
@@ -1110,7 +1357,7 @@ class BreezeApi(object):
 
         return self._request(
             '%s/update?person_id=%s&fields_json=%s' % (
-                ENDPOINTS.PEOPLE, person_id, fields_json
+                EndPoints.PEOPLE, person_id, fields_json
             ))
 
     def event_check_in(self, person_id, event_instance_id):
@@ -1122,7 +1369,7 @@ class BreezeApi(object):
 
         return self._request(
             '%s/attendance/add?person_id=%s&instance_id=%s' % (
-                ENDPOINTS.EVENTS, str(person_id), str(event_instance_id)
+                EndPoints.EVENTS, str(person_id), str(event_instance_id)
             ))
 
     def event_check_out(self, person_id, event_instance_id):
@@ -1137,7 +1384,7 @@ class BreezeApi(object):
 
         return self._request(
             '%s/attendance/delete?person_id=%s&instance_id=%s' % (
-                ENDPOINTS.EVENTS, str(person_id), str(event_instance_id)
+                EndPoints.EVENTS, str(person_id), str(event_instance_id)
             ))
 
     def add_contribution(self,
@@ -1232,7 +1479,7 @@ class BreezeApi(object):
             params.append('batch_number=%s' % batch_number)
         if batch_name:
             params.append('batch_name=%s' % batch_name)
-        response = self._request('%s/add?%s' % (ENDPOINTS.CONTRIBUTIONS,
+        response = self._request('%s/add?%s' % (EndPoints.CONTRIBUTIONS,
                                                 '&'.join(params)))
         return response['payment_id']
 
@@ -1332,7 +1579,7 @@ class BreezeApi(object):
             params.append('batch_number=%s' % batch_number)
         if batch_name:
             params.append('batch_name=%s' % batch_name)
-        response = self._request('%s/edit?%s' % (ENDPOINTS.CONTRIBUTIONS,
+        response = self._request('%s/edit?%s' % (EndPoints.CONTRIBUTIONS,
                                                  '&'.join(params)))
         return response['payment_id']
 
@@ -1349,7 +1596,7 @@ class BreezeApi(object):
           BreezeError on failure to delete contribution."""
 
         response = self._request('%s/delete?payment_id=%s' % (
-            ENDPOINTS.CONTRIBUTIONS, payment_id
+            EndPoints.CONTRIBUTIONS, payment_id
         ))
         return response['payment_id']
 
@@ -1364,7 +1611,7 @@ class BreezeApi(object):
 
         params = ['entry_id=%s' % entry_id]
         return self._request('%s/remove_form_entry?%s' %
-                             (ENDPOINTS.FORMS, '&'.join(params)))
+                             (EndPoints.FORMS, '&'.join(params)))
 
     def add_tag(self, name, folder_id=None):
         """Add a new tag
@@ -1379,11 +1626,11 @@ class BreezeApi(object):
         if folder_id:
             params.append('folder_id=%s' % folder_id)
 
-        return self._request('%s/add_tag?%s' % (ENDPOINTS.TAGS,
+        return self._request('%s/add_tag?%s' % (EndPoints.TAGS,
                                                 '&'.join(params)))
 
     def delete_tag(self, tag_id: Id):
-        return self._request(f"{ENDPOINTS.TAGS}/delete_tag?tag_id={tag_id}")
+        return self._request(f"{EndPoints.TAGS}/delete_tag?tag_id={tag_id}")
 
     def assign_tag(self,
                    person_id,
@@ -1406,7 +1653,7 @@ class BreezeApi(object):
         params.append('tag_id=%s' % tag_id)
 
         response = self._request('%s/assign?%s' %
-                                 (ENDPOINTS.TAGS, '&'.join(params)))
+                                 (EndPoints.TAGS, '&'.join(params)))
 
         return response
 
@@ -1431,6 +1678,6 @@ class BreezeApi(object):
         params.append('tag_id=%s' % tag_id)
 
         response = self._request('%s/unassign?%s' %
-                                 (ENDPOINTS.TAGS, '&'.join(params)))
+                                 (EndPoints.TAGS, '&'.join(params)))
 
         return response
