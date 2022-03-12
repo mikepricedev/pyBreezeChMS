@@ -18,7 +18,6 @@ Usage:
 __author__ = 'alexortizrosado@gmail.com (Alex Ortiz-Rosado)'
 
 import json
-from multiprocessing import Event
 import os
 import logging
 from typing import Callable, Dict, List, Literal, Set, Union, AsyncGenerator
@@ -30,7 +29,7 @@ import re
 from .breeze_type_parsing import type_parsing, ReturnTypeParsers
 from .breeze_endpoints import EndPoints
 from .utils import datetime_to_date, JSONSerial
-from .breeze_types import AccountLog, AccountSummery, Attendance, Calendar, Campaign, Contribution, Form, FormEntry, FormField, Fund, Id, Location, Person, Pledge, ProfileFields, AccountLogActions, Tag, TagFolder, Volunteer, VolunteerRole
+from .breeze_types import AccountLog, AccountSummery, Attendance, Calendar, Campaign, Contribution, Event, Form, FormEntry, FormField, Fund, Id, Location, Person, Pledge, ProfileFields, AccountLogActions, Tag, TagFolder, Volunteer, VolunteerRole
 
 
 class BreezeError(Exception):

@@ -287,11 +287,7 @@ class ReturnTypeParsers(object):
         details = self._parse_types_(
             to_parse=details, custom_type_parser=detail_formatter)
 
-        # convert detail keys to ints
-        int_key_details: PersonDetails = dict()
-        for key, item in details.items():
-            int_key_details[type_parsing.str_to_int(key)] = item
-        return int_key_details
+        return PersonDetails(details)
 
     def _person(self, person: dict, parsing_ids: dict) -> Person:
 
@@ -532,10 +528,7 @@ class ReturnTypeParsers(object):
                                       custom_type_parser=entry_response_parser)
 
         # convert response keys to ints
-        int_key_response: PersonDetails = dict()
-        for key, item in response.items():
-            int_key_response[type_parsing.str_to_int(key)] = item
-        return int_key_response
+        return FormEntryResponse(response)
 
     def form_entry(self, entry: dict) -> FormEntry:
         def entry_parser(key: str, value):

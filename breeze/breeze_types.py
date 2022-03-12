@@ -2,6 +2,8 @@ from enum import Enum, auto
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union, TypedDict
 
+import breeze.breeze_type_parsing as breeze_type_parsing
+
 
 Id = Union[int, str]
 ProfileFields = List[Dict]
@@ -29,7 +31,22 @@ class FamilyMember(TypedDict):
     details: FamilyMemberDetails
 
 
-PersonDetails = Dict[Union[int, str], Any]
+class PersonDetails(dict[Union[int, str], Any]):
+    def __init__(self: Dict[int, Any], details: Dict[str, Any] = dict()):
+        super()
+        for key, value in details.items():
+            self[breeze_type_parsing.type_parsing.str_to_int(key)] = value
+
+    def get_serializable(self) -> Dict[str, Any]:
+        serializable_dict: Dict[str, Any] = dict()
+
+        for key, value in self.items():
+            if isinstance(key, int):
+                serializable_dict[str(key)] = value
+            else:
+                serializable_dict[key] = value
+
+        return serializable_dict
 
 
 class Person(TypedDict):
@@ -279,7 +296,19 @@ class Event(TypedDict):
     details: Optional[EventDetails]
 
 
-FormEntryResponse = Dict[int, Any]
+class FormEntryResponse(dict[int, Any]):
+    def __init__(self: Dict[int, Any], response: Dict[str, Any] = dict()):
+        super()
+        for key, value in response.items():
+            self[breeze_type_parsing.type_parsing.str_to_int(key)] = value
+
+    def get_serializable(self) -> Dict[str, Any]:
+        serializable_dict: Dict[str, Any] = dict()
+
+        for key, value in self.items():
+            serializable_dict[str(key)] = value
+
+        return serializable_dict
 
 
 class Form(TypedDict):
