@@ -17,6 +17,7 @@ Usage:
 
 __author__ = 'alexortizrosado@gmail.com (Alex Ortiz-Rosado)'
 
+from cgitb import handler
 import json
 import os
 import logging
@@ -40,11 +41,15 @@ class BreezeError(Exception):
 MAX_EVENTS_LIMIT = 1000
 MAX_ACCOUNT_LOG_LIMIT = 3000
 
+DEFAULT_LOGGING_FMT = '[%(asctime)s]%(levelname)s:%(name)s:%(message)s'
+
 
 class BreezeApi(object):
     """A wrapper for the Breeze REST API."""
 
     return_type_parsers: ReturnTypeParsers
+
+    logger: logging.Logger = logging.getLogger(__name__)
 
     def __init__(self,
                  breeze_sub_domain: str = None,
@@ -54,7 +59,8 @@ class BreezeApi(object):
                  dry_run=False,
                  client=httpx.AsyncClient(verify=True),
                  return_type_parsers=ReturnTypeParsers(),
-                 retries=10
+                 retries=10,
+                 logger: logging.Logger = None
                  ):
         """Instantiates the BreezeApi with your Breeze account information.
 
@@ -90,6 +96,13 @@ class BreezeApi(object):
               and timeout errors.
           """
 
+        if logger:
+            self.logger = logger
+        else:
+            handler = logging.StreamHandler()
+            handler.setFormatter(fmt=logging.Formatter(fmt=DEFAULT_LOGGING_FMT))
+            self.logger.addHandler(hdlr=handler)
+
         breeze_sub_domain = os.getenv(key="BREEZE_SUB_DOMAIN",
                                       default=breeze_sub_domain)
 
@@ -105,7 +118,7 @@ class BreezeApi(object):
         if not breeze_api_key:
             error_msg = "Breeze api key not found.  Provided api key in init arg 'breeze_api_key' or in the env var 'BREEZE_API_KEY'"
 
-            logging.exception(error_msg)
+            self.logger.exception(error_msg)
             raise BreezeError(error_msg)
 
         if not breeze_url:
@@ -113,19 +126,19 @@ class BreezeApi(object):
                 if not breeze_tld and not breeze_sub_domain:
                     error_msg = "Breeze url not found.  Provided your orgs full breeze url in the init arg 'breeze_url' or in the env var 'BREEZE_URL'. Alternatively provided the breeze tdl and your orgs breeze subdomain in the init args 'breeze_sub_domain' and 'breeze_tld' or in the env vars 'BREEZE_SUB_DOMAIN' and 'BREEZE_TLD'."
 
-                    logging.exception(error_msg)
+                    self.logger.exception(error_msg)
                     raise BreezeError(error_msg)
 
                 elif not breeze_tld:
                     error_msg = "Breeze url not found.  Provided your orgs full breeze url in the init arg 'breeze_url' or in the env var 'BREEZE_URL'. Alternatively provided the breeze tdl in the init arg 'breeze_tld' or in the env var 'BREEZE_TLD'."
 
-                    logging.exception(error_msg)
+                    self.logger.exception(error_msg)
                     raise BreezeError(error_msg)
 
                 else:
                     error_msg = "Breeze url not found.  Provided your orgs full breeze url in the init arg 'breeze_url' or in the env var 'BREEZE_URL'. Alternatively provided your orgs breeze subdomain in the init arg 'breeze_sub_domain' or in the env var 'BREEZE_SUB_DOMAIN'."
 
-                    logging.exception(error_msg)
+                    self.logger.exception(error_msg)
                     raise BreezeError(error_msg)
             else:
                 breeze_url = f"https://{breeze_sub_domain}.{breeze_tld}"
@@ -139,7 +152,7 @@ class BreezeApi(object):
 
         if not (self.breeze_url and self.breeze_url.startswith('https://') and
                 self.breeze_url.find('.breezechms.')):
-            logging.exception(
+            self.logger.exception(
                 'You must provide your breeze_url as subdomain.breezechms.com')
             raise BreezeError('You must provide your breeze_url as ',
                               'subdomain.breezechms.com')
@@ -171,7 +184,7 @@ class BreezeApi(object):
         keywords = dict(params=params, headers=headers, timeout=timeout)
         url = '%s%s' % (self.breeze_url, endpoint)
 
-        logging.debug('Making request to %s', url)
+        self.logger.info(f'Request {url}')
         if self.dry_run:
             return
         response: httpx.Response = None
@@ -182,8 +195,8 @@ class BreezeApi(object):
             #  500 errors
             if response.status_code >= 500 and attempts < self.retries:
                 attempts = attempts + 1
-                logging.warning(
-                    f"Error Code {response.status_code}: {url}.  Retry attempt number {attempts} of {self.retries}.")
+                self.logger.warning(
+                    f"Request {url}; HTTP Error Code {response.status_code}; Retry attempt number {attempts} of {self.retries}.")
                 # sleep for 100 ms for each retry for a max of 1000ms
                 await asyncio.sleep(min((attempts/10), 1))
                 return await self._request(endpoint=endpoint,
@@ -196,8 +209,8 @@ class BreezeApi(object):
         except httpx.ReadTimeout as error:
             if attempts < self.retries:
                 attempts = attempts + 1
-                logging.warning(
-                    f"Read Timeout Error: {url}.  Retry attempt number {attempts} of {self.retries}.")
+                self.logger.warning(
+                    f'Request {url}; ReadTimeout Error;  Retry attempt number {attempts} of {self.retries}.')
                 # sleep for 100 ms for each retry for a max of 1000ms
                 await asyncio.sleep(min((attempts/10), 1))
                 return await self._request(endpoint=endpoint,
@@ -208,13 +221,15 @@ class BreezeApi(object):
             else:
                 raise error
         except (httpx.RequestError, Exception) as error:
-            logging.exception(str(error))
+            self.logger.exception(
+                f'Request {url}; {str(error)}')
             raise BreezeError(error)
         else:
             if not self._request_succeeded(response):
-                logging.exception(str(response))
+                self.logger.exception(
+                    f'Request {url}; {str(error)}')
                 raise BreezeError(response)
-            logging.debug('JSON Response: %s', response)
+            self.logger.debug(f'Request {url}; JSON Response {response}')
             return response
 
     def _request_succeeded(self, response):
@@ -671,7 +686,7 @@ class BreezeApi(object):
                 if len(event_dates) == 1:
 
                     # Overflowed max limit on single day
-                    logging.exception(
+                    self.logger.exception(
                         f"Single day events on {last_date.isoformat()} overflowed the max batch size of {MAX_EVENTS_LIMIT}.  Some events are likely unretrievable due to limitations the breeze api.")
 
                     if on_max_limit_overflow:
@@ -891,7 +906,7 @@ class BreezeApi(object):
             params.append('person_id=%s' % person_id)
         if include_family:
             if not person_id:
-                logging.exception('include_family requires a person_id.')
+                self.logger.exception('include_family requires a person_id.')
                 raise BreezeError('include_family requires a person_id.')
             params.append('include_family=1')
         if amount_min:
@@ -1259,7 +1274,7 @@ class BreezeApi(object):
 
                 if len(log_dates) == 1:
                     # Overflowed max limit on single day
-                    logging.exception(
+                    self.logger.exception(
                         f'Single day "{action.name}" logs on {first_date.isoformat()} overflowed the max batch size of {MAX_ACCOUNT_LOG_LIMIT}.  Some logs are likely unretrievable due to limitations the breeze api.')
 
                     if on_max_limit_overflow:
