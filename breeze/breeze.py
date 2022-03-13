@@ -55,7 +55,7 @@ class BreezeApi(object):
                  client=httpx.AsyncClient(verify=True),
                  return_type_parsers=ReturnTypeParsers(),
                  retries=10,
-                 logger: logging.Logger = None
+                 logger: logging.Logger = logging.getLogger(name=__name__)
                  ):
         """Instantiates the BreezeApi with your Breeze account information.
 
@@ -94,11 +94,7 @@ class BreezeApi(object):
 
           """
 
-        if not logger:
-            self.logger = logging.getLogger(name=__name__)
-            self.logger.addHandler(hdlr=logging.NullHandler())
-        else:
-            self.logger = logger
+        self.logger = logger
 
         breeze_sub_domain = os.getenv(key="BREEZE_SUB_DOMAIN",
                                       default=breeze_sub_domain)
