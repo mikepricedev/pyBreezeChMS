@@ -17,7 +17,6 @@ Usage:
 
 __author__ = 'alexortizrosado@gmail.com (Alex Ortiz-Rosado)'
 
-from cgitb import handler
 import json
 import os
 import logging
@@ -41,15 +40,11 @@ class BreezeError(Exception):
 MAX_EVENTS_LIMIT = 1000
 MAX_ACCOUNT_LOG_LIMIT = 3000
 
-DEFAULT_LOGGING_FMT = '[%(asctime)s]%(levelname)s:%(name)s:%(message)s'
-
 
 class BreezeApi(object):
     """A wrapper for the Breeze REST API."""
 
-    return_type_parsers: ReturnTypeParsers
-
-    logger: logging.Logger = logging.getLogger(__name__)
+    logger: logging.Logger
 
     def __init__(self,
                  breeze_sub_domain: str = None,
@@ -94,14 +89,16 @@ class BreezeApi(object):
           retries: How many times to retry a request after a 500 or timeout
               error.  The breeze api can be unreliable production random 500
               and timeout errors.
+
+          logger: add custom logger
+
           """
 
-        if logger:
-            self.logger = logger
+        if not logger:
+            self.logger = logging.getLogger(name=__name__)
+            self.logger.addHandler(hdlr=logging.NullHandler())
         else:
-            handler = logging.StreamHandler()
-            handler.setFormatter(fmt=logging.Formatter(fmt=DEFAULT_LOGGING_FMT))
-            self.logger.addHandler(hdlr=handler)
+            self.logger = logger
 
         breeze_sub_domain = os.getenv(key="BREEZE_SUB_DOMAIN",
                                       default=breeze_sub_domain)
@@ -143,15 +140,15 @@ class BreezeApi(object):
             else:
                 breeze_url = f"https://{breeze_sub_domain}.{breeze_tld}"
 
-        self.breeze_url = breeze_url
-        self.breeze_api_key = breeze_api_key
-        self.dry_run = dry_run
-        self.client = client
-        self.return_type_parsers = return_type_parsers
-        self.retries = retries
+        self._breeze_url = breeze_url
+        self._breeze_api_key = breeze_api_key
+        self._dry_run = dry_run
+        self._client = client
+        self._return_type_parsers = return_type_parsers
+        self._retries = retries
 
-        if not (self.breeze_url and self.breeze_url.startswith('https://') and
-                self.breeze_url.find('.breezechms.')):
+        if not (self._breeze_url and self._breeze_url.startswith('https://') and
+                self._breeze_url.find('.breezechms.')):
             self.logger.exception(
                 'You must provide your breeze_url as subdomain.breezechms.com')
             raise BreezeError('You must provide your breeze_url as ',
@@ -175,28 +172,28 @@ class BreezeApi(object):
             headers = {}
         headers.update({
             'Content-Type': 'application/json',
-            'Api-Key': self.breeze_api_key,
+            'Api-Key': self._breeze_api_key,
             'Cache-Control': 'no-cache'
         })
 
         if params is None:
             params = {}
         keywords = dict(params=params, headers=headers, timeout=timeout)
-        url = '%s%s' % (self.breeze_url, endpoint)
+        url = '%s%s' % (self._breeze_url, endpoint)
 
         self.logger.info(f'Request {url}')
-        if self.dry_run:
+        if self._dry_run:
             return
         response: httpx.Response = None
         try:
-            response = await self.client.get(url, ** keywords)
+            response = await self._client.get(url, ** keywords)
 
             # The breeze api server can be unreliable producing random
             #  500 errors
-            if response.status_code >= 500 and attempts < self.retries:
+            if response.status_code >= 500 and attempts < self._retries:
                 attempts = attempts + 1
                 self.logger.warning(
-                    f"Request {url}; HTTP Error Code {response.status_code}; Retry attempt number {attempts} of {self.retries}.")
+                    f"Request {url}; HTTP Error Code {response.status_code}; Retry attempt number {attempts} of {self._retries}.")
                 # sleep for 100 ms for each retry for a max of 1000ms
                 await asyncio.sleep(min((attempts/10), 1))
                 return await self._request(endpoint=endpoint,
@@ -207,10 +204,10 @@ class BreezeApi(object):
 
             response = response.json()
         except httpx.ReadTimeout as error:
-            if attempts < self.retries:
+            if attempts < self._retries:
                 attempts = attempts + 1
                 self.logger.warning(
-                    f'Request {url}; ReadTimeout Error;  Retry attempt number {attempts} of {self.retries}.')
+                    f'Request {url}; ReadTimeout Error;  Retry attempt number {attempts} of {self._retries}.')
                 # sleep for 100 ms for each retry for a max of 1000ms
                 await asyncio.sleep(min((attempts/10), 1))
                 return await self._request(endpoint=endpoint,
@@ -328,14 +325,14 @@ class BreezeApi(object):
                 if not people:
                     return []
 
-                return self.return_type_parsers.person(person=people,
-                                                       profile_fields=profile_fields)
+                return self._return_type_parsers.person(person=people,
+                                                        profile_fields=profile_fields)
 
         else:
             params.append('details=0')
             people = (await self._request(
                 f"{EndPoints.PEOPLE}/?{'&'.join(params)}") or [])
-            return self.return_type_parsers.person(person=people)
+            return self._return_type_parsers.person(person=people)
 
     async def list_people(self,
                           details: bool = False,
@@ -387,14 +384,14 @@ class BreezeApi(object):
             if not people:
                 return []
 
-            return self.return_type_parsers.person(person=people,
-                                                   profile_fields=profile_fields)
+            return self._return_type_parsers.person(person=people,
+                                                    profile_fields=profile_fields)
 
         else:
             params.append('details=0')
             people = (await self._request(
                 f"{EndPoints.PEOPLE}/?{'&'.join(params)}") or [])
-            return self.return_type_parsers.person(person=people)
+            return self._return_type_parsers.person(person=people)
 
     async def yield_people(self,
                            details: bool = False,
@@ -476,7 +473,7 @@ class BreezeApi(object):
         Returns:
           JSON response."""
         return list(map(
-            lambda profile_field: self.return_type_parsers.profile_field(
+            lambda profile_field: self._return_type_parsers.profile_field(
                 profile_field=profile_field),
             (await self._request(EndPoints.PROFILE_FIELDS)) or []))
 
@@ -512,7 +509,7 @@ class BreezeApi(object):
             (person, profile_fields) = await get_results()
 
             if person:
-                return self.return_type_parsers.person(
+                return self._return_type_parsers.person(
                     person=person,
                     profile_fields=profile_fields)
             else:
@@ -526,7 +523,7 @@ class BreezeApi(object):
             if not person:
                 return None
 
-            return self.return_type_parsers.person(person=person)
+            return self._return_type_parsers.person(person=person)
 
     async def list_tags(self, folder_id: Id = None) -> List[Tag]:
         """List of tags
@@ -557,7 +554,7 @@ class BreezeApi(object):
             params.append('folder_id=%s' % folder_id)
 
         return list(map(
-            lambda tag: self.return_type_parsers.tag(tag=tag),
+            lambda tag: self._return_type_parsers.tag(tag=tag),
             (await self._request('%s/list_tags/?%s' % (EndPoints.TAGS, '&'.join(params)))) or []
         ))
 
@@ -596,7 +593,7 @@ class BreezeApi(object):
              ]"""
 
         return list(map(
-            lambda tag_folder: self.return_type_parsers.tag_folder(
+            lambda tag_folder: self._return_type_parsers.tag_folder(
                 tag_folder=tag_folder),
             (await self._request("%s/list_folders" % EndPoints.TAGS)) or []
         ))
@@ -639,7 +636,7 @@ class BreezeApi(object):
             params.append(f"limit={limit}")
 
         return list((map(
-            lambda event: self.return_type_parsers.event(event=event),
+            lambda event: self._return_type_parsers.event(event=event),
             (await self._request('%s/?%s' % (EndPoints.EVENTS, '&'.join(params)))) or []
         )))
 
@@ -754,7 +751,7 @@ class BreezeApi(object):
         if event == None:
             return event
         else:
-            return self.return_type_parsers.event(event=event)
+            return self._return_type_parsers.event(event=event)
 
     async def list_event_schedule(self,
                                   instance_id: Id,
@@ -791,7 +788,7 @@ class BreezeApi(object):
             params.append("details=1")
 
         return list((map(
-            lambda event: self.return_type_parsers.event(event=event),
+            lambda event: self._return_type_parsers.event(event=event),
             (await self._request(f"{EndPoints.EVENTS}/list_event?{'&'.join(params)}")) or []
         )))
 
@@ -799,7 +796,7 @@ class BreezeApi(object):
         """Retrieve a list of Calendars.
         """
         return list(map(
-            lambda calendar: self.return_type_parsers.calendar(
+            lambda calendar: self._return_type_parsers.calendar(
                 calendar=calendar),
             (await self._request(f"{EndPoints.EVENTS}/calendars/list")) or []
         ))
@@ -808,7 +805,7 @@ class BreezeApi(object):
         """Retrieve a list of Locations.
         """
         return list(map(
-            lambda location: self.return_type_parsers.location(
+            lambda location: self._return_type_parsers.location(
                 location=location),
             (await self._request(f"{EndPoints.EVENTS}/locations")) or []
         ))
@@ -834,7 +831,7 @@ class BreezeApi(object):
             params.append(f"type={type}")
 
         return list(map(
-            lambda attendee: self.return_type_parsers.attendee(
+            lambda attendee: self._return_type_parsers.attendee(
                 attendee=attendee),
             (await self._request(f"{EndPoints.ATTENDANCE}/list/?{'&'.join(params)}")) or []
         ))
@@ -851,7 +848,7 @@ class BreezeApi(object):
         params = ['instance_id=%s' % instance_id, ]
 
         return list(map(
-            lambda person: self.return_type_parsers.person(person=person),
+            lambda person: self._return_type_parsers.person(person=person),
             ((await self._request('%s/eligible?%s' %
                                   (EndPoints.ATTENDANCE, '&'.join(params)), timeout=180)) or [])
         ))
@@ -932,7 +929,7 @@ class BreezeApi(object):
                 map(lambda id: str(id), pledge_ids)))
 
         return list(map(
-            lambda contribution: self.return_type_parsers.contribution(
+            lambda contribution: self._return_type_parsers.contribution(
                 contribution=contribution),
             (await self._request('%s/list?%s' % (EndPoints.CONTRIBUTIONS,
                                                  '&'.join(params)))) or []
@@ -1018,7 +1015,7 @@ class BreezeApi(object):
             params.append('include_totals=1')
 
         return list(map(
-            lambda fund: self.return_type_parsers.fund(fund=fund),
+            lambda fund: self._return_type_parsers.fund(fund=fund),
             (await self._request('%s/list?%s' %
                                  (EndPoints.FUNDS, '&'.join(params)))) or []
         ))
@@ -1030,7 +1027,7 @@ class BreezeApi(object):
           JSON response."""
 
         return list(map(
-            lambda campaign: self.return_type_parsers.campaign(
+            lambda campaign: self._return_type_parsers.campaign(
                 campaign=campaign),
             (await self._request('%s/list_campaigns' % (EndPoints.PLEDGES))) or []
         ))
@@ -1045,7 +1042,7 @@ class BreezeApi(object):
           JSON response."""
 
         return list(map(
-            lambda pledge: self.return_type_parsers.pledge(
+            lambda pledge: self._return_type_parsers.pledge(
                 pledge=pledge),
             (await self._request('%s/list_pledges?campaign_id=%s' % (
                 EndPoints.PLEDGES, campaign_id
@@ -1066,7 +1063,7 @@ class BreezeApi(object):
             params.append('is_archived=1')
 
         return list(map(
-            lambda form: self.return_type_parsers.form(form=form),
+            lambda form: self._return_type_parsers.form(form=form),
             (await self._request('%s/list_forms?%s' %
                                  (EndPoints.FORMS, '&'.join(params)))) or []
         ))
@@ -1083,7 +1080,7 @@ class BreezeApi(object):
         params = ['form_id=%s' % form_id]
 
         return list(map(
-            lambda form_field: self.return_type_parsers.form_field(
+            lambda form_field: self._return_type_parsers.form_field(
                 form_field=form_field),
             (await self._request('%s/list_form_fields?%s' %
                                  (EndPoints.FORMS, '&'.join(params)))) or []
@@ -1105,7 +1102,7 @@ class BreezeApi(object):
             params.append('details=1')
 
         return list(map(
-            lambda entry: self.return_type_parsers.form_entry(
+            lambda entry: self._return_type_parsers.form_entry(
                 entry=entry),
             (await self._request(
                 '%s/list_form_entries?%s' %
@@ -1124,7 +1121,7 @@ class BreezeApi(object):
         params = ['instance_id=%s' % instance_id, ]
 
         return list(map(
-            lambda volunteer: self.return_type_parsers.volunteer(
+            lambda volunteer: self._return_type_parsers.volunteer(
                 volunteer=volunteer),
             (await self._request('%s/list?%s' %
                                  (EndPoints.VOLUNTEERS, '&'.join(params)))) or []
@@ -1147,7 +1144,7 @@ class BreezeApi(object):
             params.append('show_quantity=1')
 
         return list(map(
-            lambda role: self.return_type_parsers.volunteer_role(role=role),
+            lambda role: self._return_type_parsers.volunteer_role(role=role),
             (await self._request('%s/list_roles?%s' %
                                  (EndPoints.VOLUNTEERS, '&'.join(params)))) or []
         ))
@@ -1185,7 +1182,7 @@ class BreezeApi(object):
         if not account:
             return None
 
-        return self.return_type_parsers.breeze_account(account=account)
+        return self._return_type_parsers.breeze_account(account=account)
 
     async def get_account_log(self,
                               action: AccountLogActions,
@@ -1227,7 +1224,7 @@ class BreezeApi(object):
             params.append("details=1")
 
         return list(map(
-            lambda account_log: self.return_type_parsers.breeze_account_log(
+            lambda account_log: self._return_type_parsers.breeze_account_log(
                 account_log=account_log),
             (await self._request(f"{EndPoints.BREEZE_ACCOUNT}/list_log?{'&'.join(params)}", timeout=180)) or []
         ))
