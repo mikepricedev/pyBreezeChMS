@@ -413,8 +413,13 @@ class BreezeApi(object):
             else:
                 promise = None
 
-            for person in people:
-                yield person
+            try:
+                for person in people:
+                    yield person
+            except GeneratorExit:
+                if promise:
+                    promise.close()
+                    promise = None
 
     async def list_people_by_filters(self,
                                      details: bool = False,
@@ -714,11 +719,16 @@ class BreezeApi(object):
                 else:
                     promise = None
 
-            for event in events:
-                id = event.get("id", 0)
-                if id not in EVENT_IDS:
-                    EVENT_IDS.add(id)
-                    yield event
+            try:
+                for event in events:
+                    id = event.get("id", 0)
+                    if id not in EVENT_IDS:
+                        EVENT_IDS.add(id)
+                        yield event
+            except GeneratorExit:
+                if promise:
+                    promise.close()
+                    promise = None
 
     async def show_event(self,
                          instance_id: Id,
@@ -994,8 +1004,13 @@ class BreezeApi(object):
             else:
                 promise = None
 
-            for contrib in contribs:
-                yield contrib
+            try:
+                for contrib in contribs:
+                    yield contrib
+            except GeneratorExit:
+                if promise:
+                    promise.close()
+                    promise = None
 
     async def list_funds(self, include_totals: bool = False) -> List[Fund]:
         """List all funds.
@@ -1301,11 +1316,16 @@ class BreezeApi(object):
                 else:
                     promise = None
 
-            for log in logs:
-                id = log.get("id", 0)
-                if id not in LOG_IDS:
-                    LOG_IDS.add(id)
-                    yield log
+            try:
+                for log in logs:
+                    id = log.get("id", 0)
+                    if id not in LOG_IDS:
+                        LOG_IDS.add(id)
+                        yield log
+            except GeneratorExit:
+                if promise:
+                    promise.close()
+                    promise = None
 
     def add_person(self, first_name, last_name, fields_json=None):
         """Adds a new person into the database.
