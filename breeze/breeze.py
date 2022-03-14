@@ -1139,11 +1139,13 @@ class BreezeApi(object):
 
         params = ['instance_id=%s' % instance_id, ]
 
+        response = (await self._request('%s/list?%s' %
+                                        (EndPoints.VOLUNTEERS, '&'.join(params)))) or []
+
         return list(map(
             lambda volunteer: self._return_type_parsers.volunteer(
                 volunteer=volunteer),
-            (await self._request('%s/list?%s' %
-                                 (EndPoints.VOLUNTEERS, '&'.join(params)))) or []
+            response.values() if isinstance(response, dict) else response
         ))
 
     async def list_volunteer_roles(self,
