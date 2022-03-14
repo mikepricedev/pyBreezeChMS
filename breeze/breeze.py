@@ -214,10 +214,12 @@ class BreezeApi(object):
                                            timeout=timeout,
                                            attempts=attempts)
             else:
+                self.logger.exception(
+                    f'Request {url}:{str(error)}')
                 raise error
         except (httpx.RequestError, Exception) as error:
             self.logger.exception(
-                f'Request {url}; {str(error)}')
+                f'Request {url}:{str(error)}')
             raise BreezeError(error)
         else:
             if not self._request_succeeded(response):
