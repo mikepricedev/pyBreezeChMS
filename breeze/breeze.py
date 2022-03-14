@@ -1259,7 +1259,7 @@ class BreezeApi(object):
                                 user_id: Id = None,
                                 details: bool = False,
                                 on_max_limit_overflow: Callable[[
-            date, List[Dict]], None] = None
+            date, List[Dict], AccountLogActions], None] = None
     ) -> AsyncGenerator[AccountLog, None]:
         LOG_IDS: set[int] = set()
         end_date = datetime_to_date(date=to_date)
@@ -1296,7 +1296,7 @@ class BreezeApi(object):
                         f'Single day "{action.name}" logs on {first_date.isoformat()} overflowed the max batch size of {MAX_ACCOUNT_LOG_LIMIT}.  Some logs are likely unretrievable due to limitations the breeze api.')
 
                     if on_max_limit_overflow:
-                        on_max_limit_overflow(first_date, logs)
+                        on_max_limit_overflow(first_date, logs, action)
 
                     if first_date > from_date:
                         # Continue skip overflowed day and continue
