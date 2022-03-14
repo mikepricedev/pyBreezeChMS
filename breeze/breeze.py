@@ -40,8 +40,6 @@ class BreezeError(Exception):
 MAX_EVENTS_LIMIT = 1000
 MAX_ACCOUNT_LOG_LIMIT = 3000
 
-LOGGER_NAME = __name__
-
 
 class BreezeApi(object):
     """A wrapper for the Breeze REST API."""
