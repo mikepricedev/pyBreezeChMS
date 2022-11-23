@@ -228,7 +228,7 @@ class BreezeApi(object):
         else:
             if not self._request_succeeded(response):
                 self._logger.exception(
-                    f'Request {url}; {str(error)}')
+                    f'Request {url}; {str(response)}')
                 raise BreezeError(response)
             self._logger.debug(f'Request {url}; JSON Response {response}')
             return response
@@ -253,12 +253,11 @@ class BreezeApi(object):
                            limit: int = None,
                            offset: int = 0,
                            **filter) -> List[Person]:
-
         params = []
 
         if len(filter):
             for key in list(filter.keys()):
-                if bool(re.match(r'^_[0-9]+', key)):
+                if bool(re.match(r'^_.+$', key)):
                     filter[key[1:]] = filter.pop(key)
 
         if limit:
