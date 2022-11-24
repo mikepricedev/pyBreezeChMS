@@ -221,6 +221,22 @@ class BreezeApi(object):
                 self._logger.exception(
                     f'Request {url}:{str(error)}')
                 raise error
+        except httpx.ConnectError as error:
+            if attempts < self._retries:
+                attempts = attempts + 1
+                self._logger.warning(
+                    f'Request {url}; Connect Error;  Retry attempt number {attempts} of {self._retries}.')
+                # sleep for 100 ms for each retry for a max of 1000ms
+                await asyncio.sleep(min((attempts/10), 1))
+                return await self._request(endpoint=endpoint,
+                                           params=params,
+                                           headers=headers,
+                                           timeout=timeout,
+                                           attempts=attempts)
+            else:
+                self._logger.exception(
+                    f'Request {url}:{str(error)}')
+                raise error
         except (httpx.RequestError, Exception) as error:
             self._logger.exception(
                 f'Request {url}:{str(error)}')
