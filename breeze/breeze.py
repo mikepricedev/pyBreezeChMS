@@ -401,7 +401,7 @@ class BreezeApi(object):
                            batch_size: int = 500) -> AsyncGenerator[Person,
                                                                     None]:
         offset = 0
-        promise = self.list_people(
+        promise = self._list_people(
             details=details,
             limit=batch_size,
             offset=offset
