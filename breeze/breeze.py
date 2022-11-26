@@ -41,6 +41,11 @@ MAX_EVENTS_LIMIT = 1000
 MAX_ACCOUNT_LOG_LIMIT = 3000
 
 
+def _now_plus_24_hours():
+    """Util method to get current datetime + 24hours"""
+    return datetime.today() + timedelta(days=1)
+
+
 class BreezeApi(object):
     """A wrapper for the Breeze REST API."""
 
@@ -667,7 +672,8 @@ class BreezeApi(object):
     async def yield_events(self,
                            from_date: Union[datetime, date] = date(
                                year=1979, month=1, day=1),
-                           to_date: Union[datetime, date] = datetime.now(),
+                           to_date: Union[datetime,
+                                          date] = _now_plus_24_hours(),
                            category_id: Id = None,
                            eligible: bool = False,
                            details: bool = False,
@@ -968,7 +974,7 @@ class BreezeApi(object):
                                   from_date: Union[datetime, date] = date(
                                       year=1979, month=1, day=1),
                                   to_date: Union[datetime,
-                                                 date] = datetime.now(),
+                                                 date] = _now_plus_24_hours(),
                                   person_id: Id = None,
                                   include_family: bool = False,
                                   amount_min: Union[int, float] = None,
@@ -1270,7 +1276,7 @@ class BreezeApi(object):
                                 from_date: Union[date, datetime] = date(
                                     year=1979, month=1, day=1),
                                 to_date: Union[date,
-                                               datetime] = datetime.now(),
+                                               datetime] = _now_plus_24_hours(),
                                 user_id: Id = None,
                                 details: bool = False,
                                 on_max_limit_overflow: Callable[[
