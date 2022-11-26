@@ -563,7 +563,11 @@ class ReturnTypeParsers(object):
             return details
         elif isinstance(details, str):
             try:
-                details = json.loads(details)
+                if action == AccountLogActions.bulk_people_deleted:
+                    details = list(
+                        map(lambda v: int(v), re.findall(r'[0-9]{7,10}', details)))
+                else:
+                    details = json.loads(details)
             except:
                 return details
 
